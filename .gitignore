@@ -1,0 +1,43 @@
+# ── Build output (everything goes to artifacts/) ───────────────────────────
+artifacts/
+*.o
+*.obj
+*.so
+*.a
+*.d
+*.exe
+*.apk
+
+# ── Android Gradle ────────────────────────────────────────────────────────
+src/app/.gradle/
+src/app/local.properties
+
+# ── macOS ─────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*.pyc
+__pycache__/
+*~
+
+# ── CMake generated ───────────────────────────────────────────────────────
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+
+# ── SDK / Environment (local user paths) ──────────────────────────────────
+local.properties
+*.env
+.env.local
+
