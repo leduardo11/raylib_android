@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(raylib_android LANGUAGES CXX)
+project(raylib_android LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,6 +44,25 @@ endif()
 
 FetchContent_MakeAvailable(raylib)
 
+# ── Fetch SQLite3 ─────────────────────────────────────────────────────────
+FetchContent_Declare(
+    sqlite3
+    URL https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_GetProperties(sqlite3)
+if(NOT sqlite3_POPULATED)
+    FetchContent_Populate(sqlite3)
+    add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+    target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
+    target_compile_definitions(sqlite3 PRIVATE SQLITE_THREADSAFE=1)
+endif()
+
+# ── raymob Android helpers (sensors, vibration, keyboard, storage) ───────
+if(PLATFORM_ANDROID)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/../libs/raymob libs/raymob)
+endif()
+
 # ── Build target ──────────────────────────────────────────────────────────
 if(PLATFORM_ANDROID)
     add_library(raylib_android SHARED ${APP_SOURCES})
@@ -68,9 +87,11 @@ if(PLATFORM_ANDROID)
         -Wl,--whole-archive
         raylib
         -Wl,--no-whole-archive
+        raymoblib
+        sqlite3
         android
         log
     )
 else()
-    target_link_libraries(raylib_android PRIVATE raylib)
+    target_link_libraries(raylib_android PRIVATE raylib sqlite3)
 endif()

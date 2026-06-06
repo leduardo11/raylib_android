@@ -41,6 +41,7 @@ android {
     sourceSets {
         main {
             assets.srcDirs += ['../../assets']
+            java.srcDirs += ['src/main/java']
         }
     }
 
@@ -48,6 +49,9 @@ android {
         debug {
             debuggable true
             signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled false
         }
     }
 
@@ -57,5 +61,9 @@ android {
             version '3.22.1'
             buildStagingDirectory file('../../../artifacts/.cxx')
         }
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 }
