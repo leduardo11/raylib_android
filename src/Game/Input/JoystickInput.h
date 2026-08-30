@@ -33,6 +33,7 @@ public:
     bool active() const { return m_active; }
     float vectorX() const { return m_vectorX; }
     float vectorY() const { return m_vectorY; }
+    float magnitude() const { return m_radius; }
     Vector2 origin() const { return m_origin; }
     Vector2 current() const { return m_current; }
 

@@ -34,7 +34,7 @@ private:
     Presentation::MapRenderer m_map;
     Presentation::PlayerSprite m_sprite;
 
-    bool m_walkMode = false;
+    bool m_walkMode = true;
     bool m_mapLoaded = false;
 
     void initWorld();

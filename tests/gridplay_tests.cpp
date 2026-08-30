@@ -254,8 +254,8 @@ void testInterpolation()
 
     auto p0 = sim.presentation(32.0f);
     CHECK(p0.isMoving == false);
-    CHECK(p0.pixelX == 5 * 32.0f);
-    CHECK(p0.pixelY == 5 * 32.0f);
+    CHECK(p0.pixelX == 5.5f * 32.0f);
+    CHECK(p0.pixelY == 5.5f * 32.0f);
 
     sim.handleInput(Direction::E, Locomotion::Walking);
     sim.update(1000.0f);                     // commit E step
@@ -263,7 +263,7 @@ void testInterpolation()
     auto p1 = sim.presentation(32.0f);
     CHECK(p1.isMoving);
     CHECK(p1.stepProgress > 0.0f);
-    CHECK(p1.pixelX > 5 * 32.0f && p1.pixelX < 6 * 32.0f);
+    CHECK(p1.pixelX > 5.5f * 32.0f && p1.pixelX < 6.5f * 32.0f);
 
     // Complete and settle exactly on destination tile.
     sim.releaseInput();

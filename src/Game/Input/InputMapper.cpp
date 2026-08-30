@@ -7,7 +7,8 @@ void InputMapper::update(JoystickInput& joystick)
     m_intent.active = false;
     m_intent.locomotion = Simulation::Locomotion::Standing;
 
-    if (joystick.active())
+    if (joystick.active() &&
+        joystick.magnitude() >= JOYSTICK_DEAD_ZONE)
     {
         m_intent.direction  = joystick.direction();
         m_intent.active     = true;
