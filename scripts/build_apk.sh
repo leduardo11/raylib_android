@@ -74,6 +74,11 @@ if [ -n "$APK" ] && [ -f "$APK" ]; then
             --ks-key-alias androiddebugkey --key-pass pass:android \
             --v1-signing-enabled true --v2-signing-enabled true "$APK" 2>&1 || \
         echo "    [WARN] signing failed (APK may already be signed)"
+
+        echo "    [verifying signature]"
+        "$APKSIGNER" verify "$APK" 2>&1 && \
+            echo "    [OK] APK signature verified (v1/v2)" || \
+            echo "    [WARN] APK signature could not be verified"
     else
         echo "    [WARN] apksigner not found — APK is UNSIGNED"
     fi

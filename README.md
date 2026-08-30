@@ -45,6 +45,7 @@ raylib_android/
 │   └── gridplay_tests.cpp  # Desktop-only self-tests for P0a sim/input logic
 └── scripts/
     ├── build_apk.sh      # Build, sign, and verify APK
+    ├── deploy_vps.sh     # Build (opt.) + push APK to the public VPS + verify
     ├── clean.sh          # Remove build artifacts
     ├── install_prereqs.sh  # Check/install build prerequisites
     ├── adb_debug.sh      # ADB WiFi pairing + install
@@ -90,12 +91,26 @@ Install missing tools:
 The script:
 1. Checks prerequisites (JDK, SDK, NDK, CMake)
 2. Auto-installs NDK if missing via `sdkmanager`
-3. Prunes stale CMake caches to avoid config conflicts
-4. Runs Gradle to compile native code and package APK
-5. Signs the APK with the debug keystore (auto-created if missing)
-6. Shows the final APK path and install instructions
+3. Runs Gradle to compile native code and package APK
+4. Signs the APK with the debug keystore (auto-created if missing)
+5. Shows the final APK path and install instructions
 
 **Output:** `artifacts/outputs/apk/debug/raylib_android-debug.apk`
+
+### Deploy to the public VPS
+
+Push the built APK to `http://155.94.247.22:8080/raylib_android-debug.apk`, atomically
+swapping it on the server (no truncated downloads) and verifying the public link
+serves the exact uploaded bytes:
+
+```bash
+SSH_ASKPASS=/path/to/password-helper ./scripts/deploy_vps.sh   # build Debug + deploy
+SSH_ASKPASS=/path/to/password-helper ./scripts/deploy_vps.sh Release
+SSH_ASKPASS=/path/to/password-helper ./scripts/deploy_vps.sh --skip-build
+```
+
+Auth fallback order: `SSH_PASS` env (needs `sshpass`), `SSH_ASKPASS`, then an
+existing SSH key for `root@155.94.247.22`.
 
 ### Incremental builds
 

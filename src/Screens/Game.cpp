@@ -3,19 +3,26 @@
 #include "Core/Application.h"
 #include "Systems/Input.h"
 #include "Systems/Rendering.h"
+#include "Game/Presentation/PlayerPresentationState.h"
 #include "raylib.h"
 
 namespace Screens {
 
 namespace {
 
-constexpr float TILE_SIZE       = 32.0f;
-constexpr int   MAP_WIDTH       = 30;
-constexpr int   MAP_HEIGHT      = 20;
-constexpr float VIEW_WIDTH      = 800.0f;
-constexpr float VIEW_HEIGHT     = 600.0f;
-constexpr float JOYSTICK_ZONE_W = VIEW_WIDTH * 0.70f; // left band grabs joystick
-constexpr float SPRITE_DT_MS    = 1000.0f / 60.0f;    // sim step scale
+constexpr float TILE_SIZE  = 32.0f;
+constexpr float LOGICAL_W  = 1280.0f;
+constexpr float LOGICAL_H  = 720.0f;
+constexpr float VIEW_W     = LOGICAL_W;
+constexpr float VIEW_H     = LOGICAL_H;
+
+// Fallback world used only when the cs_rpg map package is missing.
+constexpr int   FALLBACK_MAP_W = 30;
+constexpr int   FALLBACK_MAP_H = 20;
+constexpr float FALLBACK_VIEW_W = 800.0f;
+constexpr float FALLBACK_VIEW_H = 600.0f;
+
+constexpr float JOYSTICK_ZONE_W = LOGICAL_W * 0.70f; // left band grabs joystick
 
 constexpr Color CLR_BG        = { 0x12, 0x14, 0x1C, 0xFF };
 constexpr Color CLR_WALKABLE  = { 0x22, 0x2A, 0x38, 0xFF };
@@ -28,7 +35,7 @@ constexpr Color CLR_SPAWN     = { 0x3F, 0x6E, 0x8F, 0xFF };
 
 Game::Game(Core::Application& app)
     : m_app(app)
-    , m_btnBack(Systems::UI::makeButton("Back", 745, 22, 100, 36))
+    , m_btnBack(Systems::UI::makeButton("Back", 1280 - 116, 22, 100, 36))
 {
 }
 
@@ -45,16 +52,46 @@ void Game::onExit()
 
 void Game::initWorld()
 {
-    m_world.setSize(MAP_WIDTH, MAP_HEIGHT);
-    m_world.markSimpleMap();
+    m_mapLoaded = m_map.load("maps");
+    m_sprite.load("entities/player/player.pkg.json");
 
-    m_sim.setWorld(&m_world);
-    m_sim.setTilePosition(15, 10);
+    if (m_mapLoaded)
+    {
+        const Content::TileMapData& d = m_map.data();
 
-    float worldW = MAP_WIDTH  * TILE_SIZE;
-    float worldH = MAP_HEIGHT * TILE_SIZE;
-    m_camera.init(worldW, worldH, VIEW_WIDTH, VIEW_HEIGHT);
-    m_camera.reset(Vector2{ 15 * TILE_SIZE, 10 * TILE_SIZE });
+        m_world.setSize(d.width, d.height);
+        for (int y = 0; y < d.height; ++y)
+            for (int x = 0; x < d.width; ++x)
+                m_world.setWalkable(x, y,
+                                    d.walkable[(size_t)y * d.width + x]);
+
+        m_sim.setWorld(&m_world);
+        m_sim.setTilePosition(d.spawnTileX, d.spawnTileY);
+
+        m_camera.init((float)(d.width * d.tileSize),
+                      (float)(d.height * d.tileSize),
+                      VIEW_W, VIEW_H);
+        m_camera.reset(Vector2{ (float)(d.spawnTileX * d.tileSize +
+                                        d.tileSize / 2),
+                                (float)(d.spawnTileY * d.tileSize +
+                                        d.tileSize / 2) });
+        TraceLog(LOG_INFO, "Game: map %dx%d, spawn %d,%d", d.width, d.height,
+                d.spawnTileX, d.spawnTileY);
+    }
+    else
+    {
+        TraceLog(LOG_WARNING, "Game: map package missing — using fallback grid");
+        m_world.setSize(FALLBACK_MAP_W, FALLBACK_MAP_H);
+        m_world.markSimpleMap();
+
+        m_sim.setWorld(&m_world);
+        m_sim.setTilePosition(15, 10);
+
+        m_camera.init(FALLBACK_MAP_W * TILE_SIZE,
+                      FALLBACK_MAP_H * TILE_SIZE,
+                      FALLBACK_VIEW_W, FALLBACK_VIEW_H);
+        m_camera.reset(Vector2{ 15 * TILE_SIZE, 10 * TILE_SIZE });
+    }
 }
 
 void Game::handleInput()
@@ -112,6 +149,15 @@ void Game::update(float dt)
     m_sim.update(dtMs);
 
     auto pres = m_sim.presentation(TILE_SIZE);
+
+    Presentation::PlayerPresentationState state;
+    state.position      = Vector2{ pres.pixelX, pres.pixelY };
+    state.facing        = pres.facing;
+    state.locomotion    = pres.locomotion;
+    state.stepProgress  = pres.stepProgress;
+    state.isMoving      = pres.isMoving;
+
+    m_sprite.update(state, dtMs);
     m_camera.update(dt, Vector2{ pres.pixelX, pres.pixelY });
 }
 
@@ -120,7 +166,10 @@ void Game::render()
     Systems::Rendering::clear(CLR_BG);
 
     m_camera.apply();
-    drawGrid();
+    if (m_mapLoaded)
+        m_map.draw(m_camera);
+    else
+        drawGrid();
     drawPlayer();
     m_camera.restore();
 
@@ -136,8 +185,8 @@ void Game::drawGrid()
 {
     int camX = (int)(m_camera.origin().x / TILE_SIZE) - 1;
     int camY = (int)(m_camera.origin().y / TILE_SIZE) - 1;
-    int viewTilesX = (int)(VIEW_WIDTH  / TILE_SIZE) + 3;
-    int viewTilesY = (int)(VIEW_HEIGHT / TILE_SIZE) + 3;
+    int viewTilesX = (int)(FALLBACK_VIEW_W / TILE_SIZE) + 3;
+    int viewTilesY = (int)(FALLBACK_VIEW_H / TILE_SIZE) + 3;
 
     for (int y = camY; y < camY + viewTilesY; ++y)
     {
@@ -152,11 +201,8 @@ void Game::drawGrid()
             if (m_world.isWalkable(x, y))
             {
                 DrawRectangleRec(tile, CLR_WALKABLE);
-                bool spawnTile = (x == 15 && y == 10);
                 if ((x + y) % 2 == 0)
                     DrawRectangleRec(tile, CLR_WALK_HIL);
-                if (spawnTile)
-                    DrawRectangleRec(tile, CLR_SPAWN);
             }
             else
             {
@@ -178,16 +224,14 @@ void Game::drawPlayer()
     state.stepProgress  = pres.stepProgress;
     state.isMoving      = pres.isMoving;
 
-    Presentation::advanceAnimTimer(state, GetFrameTime());
-
-    m_renderer.draw(state, TILE_SIZE);
+    m_sprite.draw(state, TILE_SIZE);
 }
 
 void Game::drawHud()
 {
     SetTextLineSpacing(16);
-    Systems::Rendering::text("GridPlay P0a", 16, 14, 22,
-                             { 0x8A, 0xA0, 0xC0, 0xFF });
+    Systems::Rendering::text("Helbreath Map", 16, 14, 22,
+                             { 0xFC, 0xE9, 0xB0, 0xFF });
     Systems::Rendering::text("WASD / arrows / drag joystick", 16, 44, 14,
                              { 0x88, 0x99, 0xAA, 0xFF });
 

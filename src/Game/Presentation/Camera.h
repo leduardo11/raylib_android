@@ -9,6 +9,8 @@ constexpr float CAM_LERP = 4.0f;
 class Camera {
 public:
     Vector2 origin() const { return m_origin; }
+    float viewWidth()  const { return m_viewW; }
+    float viewHeight() const { return m_viewH; }
 
     void init(float worldWidthPx, float worldHeightPx,
               float viewportWidth, float viewportHeight);

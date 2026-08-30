@@ -15,12 +15,4 @@ struct PlayerPresentationState {
     float    animTimer    = 0.0f;
 };
 
-inline void advanceAnimTimer(PlayerPresentationState& s, float dt)
-{
-    if (s.isMoving)
-        s.animTimer += dt;
-    else
-        s.animTimer = 0.0f;
-}
-
 } // namespace Presentation

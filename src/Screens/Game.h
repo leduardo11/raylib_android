@@ -6,7 +6,8 @@
 #include "Game/Input/JoystickInput.h"
 #include "Game/Input/InputMapper.h"
 #include "Game/Presentation/Camera.h"
-#include "Game/Presentation/PlayerRenderer.h"
+#include "Game/Presentation/MapRenderer.h"
+#include "Game/Presentation/PlayerSprite.h"
 #include "Systems/UI.h"
 
 namespace Core { class Application; }
@@ -30,9 +31,11 @@ private:
     Input::JoystickInput     m_joystick;
     Input::InputMapper       m_mapper;
     Presentation::Camera     m_camera;
-    Presentation::PlayerRenderer m_renderer;
+    Presentation::MapRenderer m_map;
+    Presentation::PlayerSprite m_sprite;
 
     bool m_walkMode = false;
+    bool m_mapLoaded = false;
 
     void initWorld();
     void handleInput();

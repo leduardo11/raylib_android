@@ -1,0 +1,17 @@
+{
+  "atlasId": "default",
+  "mapId": "default",
+  "collisionId": "default.collision",
+  "playerSpawn": { "x": 85, "y": 85 },
+  "spawns": [
+    { "mobType": "rudolph", "x": 85, "y": 89, "hp": 30 },
+    { "mobType": "rudolph", "x": 89, "y": 85, "hp": 30 },
+    { "mobType": "rudolph", "x": 81, "y": 85, "hp": 30 },
+    { "mobType": "rudolph", "x": 85, "y": 81, "hp": 30 }
+  ],
+  "groundItems": [
+    { "x": 85, "y": 86, "itemId": 1 },
+    { "x": 84, "y": 85, "itemId": 8 },
+    { "x": 86, "y": 84, "itemId": 17 }
+  ]
+}

@@ -109,6 +109,10 @@ else()
         ${CMAKE_CURRENT_SOURCE_DIR}/../tests/gridplay_tests.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Game/Simulation/GridWorld.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Game/Simulation/PlayerMovementSimulation.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Game/Content/AtlasV2.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Game/Content/TileMap.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Game/Content/TexturePack.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Game/Content/FileIO.cpp
     )
     target_include_directories(gridplay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

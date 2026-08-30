@@ -4,27 +4,43 @@
 
 #include <cmath>
 #include <cstdio>
+#include <string>
+#include <type_traits>
 
 #include "Game/Simulation/GridWorld.h"
 #include "Game/Simulation/PlayerMovementSimulation.h"
 #include "Game/Input/DirectionQuantizer.h"
 #include "Game/Input/JoystickInput.h"
+#include "Game/Content/Json.h"
+#include "Game/Content/AtlasV2.h"
+#include "Game/Content/TileMap.h"
+#include "Game/Content/TexturePack.h"
 
 using namespace Simulation;
+using namespace Content;
 
 namespace {
 
 int g_checks   = 0;
 int g_failures = 0;
 
-#define CHECK(cond)                                                      \
-    do {                                                                 \
-        ++g_checks;                                                      \
-        if (!(cond)) {                                                   \
-            ++g_failures;                                                \
-            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);  \
-        }                                                                \
+#define CHECK(a)                                                           \
+    do {                                                                   \
+        ++g_checks;                                                        \
+        if (!(a)) {                                                        \
+            ++g_failures;                                                  \
+            std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #a);       \
+        }                                                                  \
     } while (0)
+
+template <typename A, typename B>
+void printDiff(const char* ea, const char* eb, const A& av, const B& bv)
+{
+    std::printf("FAIL %s:%d  %s == %s", __FILE__, __LINE__, ea, eb);
+    if constexpr (std::is_arithmetic_v<A> && std::is_arithmetic_v<B>)
+        std::printf(" (%d vs %d)", (int)av, (int)bv);
+    std::printf("\n");
+}
 
 #define CHECK_EQ(a, b)                                                   \
     do {                                                                 \
@@ -33,8 +49,7 @@ int g_failures = 0;
         auto vb = (b);                                                   \
         if (!(va == vb)) {                                               \
             ++g_failures;                                                \
-            std::printf("FAIL %s:%d  %s == %s (%d vs %d)\n",             \
-                        __FILE__, __LINE__, #a, #b, (int)va, (int)vb);   \
+            printDiff(#a, #b, va, vb);                                   \
         }                                                                \
     } while (0)
 
@@ -275,6 +290,244 @@ void testGridWorld()
     CHECK(!w.canStepTo(GridCoord{ 2, 3 }));
 }
 
+void testJson()
+{
+    Json::Value root = Json::parse(
+        R"({"a":1,"b":[1,2,{"c":"x"}],"d":true,"e":null,"f":{"g":1.5}})");
+
+    CHECK(root.type == Json::Value::Type::Object);
+    const Json::Value* a = root.find("a");
+    CHECK(a != nullptr);
+    CHECK_EQ(a->asInt(), 1);
+    CHECK(root.find("missing") == nullptr);
+
+    const Json::Value* b = root.find("b");
+    CHECK(b != nullptr);
+    CHECK(b->type == Json::Value::Type::Array);
+    CHECK_EQ(b->size(), 3);
+    const Json::Value* n1 = b->at(1);
+    CHECK(n1 != nullptr);
+    CHECK_EQ(n1->asInt(), 2);
+    const Json::Value* c = b->at(2);
+    CHECK(c != nullptr);
+    CHECK(c->find("c") != nullptr);
+    CHECK_EQ(c->find("c")->asString(), "x");
+
+    CHECK_EQ(root.find("d")->asBool(), true);
+    CHECK(root.find("e")->isNull());
+    CHECK_EQ(root.find("f")->find("g")->asNumber(), 1.5);
+
+    Json::Value alt = Json::parse("[1,true,\"text\"]");
+    CHECK(alt.type == Json::Value::Type::Array);
+    CHECK_EQ(alt.at(2)->asString(), "text");
+
+    bool threw = false;
+    try { Json::parse("{malformed"); } catch (const std::exception&) { threw = true; }
+    CHECK(threw);
+}
+
+void testDirectionName()
+{
+    CHECK_EQ(std::string(Content::directionName(Direction::N)), "north");
+    CHECK_EQ(std::string(Content::directionName(Direction::NE)), "northeast");
+    CHECK_EQ(std::string(Content::directionName(Direction::E)), "east");
+    CHECK_EQ(std::string(Content::directionName(Direction::SE)), "southeast");
+    CHECK_EQ(std::string(Content::directionName(Direction::S)), "south");
+    CHECK_EQ(std::string(Content::directionName(Direction::SW)), "southwest");
+    CHECK_EQ(std::string(Content::directionName(Direction::W)), "west");
+    CHECK_EQ(std::string(Content::directionName(Direction::NW)), "northwest");
+}
+
+void testAtlasV2()
+{
+    const std::string pkg =
+        R"({
+          "format": "atlas@2",
+          "kind": "player",
+          "name": "t",
+          "atlas": {
+            "textures": ["t.sheet.png"],
+            "regions": [
+              { "texture": 0, "x": 0,  "y": 0, "w": 0,  "h": 0 },
+              { "texture": 0, "x": 0,  "y": 0, "w": 24, "h": 40 }
+            ]
+          },
+          "animations": [
+            {
+              "id": "idle_peace", "frameTimeMs": 100, "loop": true,
+              "directions": [
+                { "direction": "north",
+                  "frames": [{ "region": 1, "origin": { "x": 12, "y": 40 } }] },
+                { "direction": "east",
+                  "frames": [
+                    { "region": 1, "origin": { "x": 12, "y": 40 } },
+                    { "region": 1, "origin": { "x": 12, "y": 40 } } ] }
+              ]
+            },
+            {
+              "id": "die", "frameTimeMs": 100, "loop": false,
+              "holdLastFrame": true,
+              "directions": [
+                { "direction": "south",
+                  "frames": [
+                    { "region": 1, "origin": { "x": 12, "y": 40 } },
+                    { "region": 1, "origin": { "x": 12, "y": 40 } },
+                    { "region": 1, "origin": { "x": 12, "y": 40 } } ] }
+              ]
+            }
+          ],
+          "states": [
+            { "semantic": "locomotion/standing", "variant": "peace",
+              "animation": "idle_peace" },
+            { "semantic": "locomotion/running",
+              "animation": "run" },
+            { "semantic": "combat/death", "animation": "die" }
+          ]
+        })";
+
+    Content::AtlasV2Package parsed = Content::parseAtlasV2(pkg);
+    CHECK(parsed.textures.size() == 1);
+    CHECK_EQ(parsed.textures[0], "t.sheet.png");
+    CHECK(parsed.regions.size() == 2);
+    CHECK(parsed.regions[1].w == 24);
+    CHECK(parsed.regions[1].h == 40);
+    CHECK(parsed.clips.size() == 2);
+    CHECK(parsed.states.size() == 3);
+
+    const Content::AnimClip* idle =
+        Content::resolveAnimation(parsed, "locomotion/standing", "peace");
+    CHECK(idle != nullptr);
+    CHECK_EQ(idle->id, "idle_peace");
+    CHECK(Content::resolveAnimation(parsed, "locomotion/standing", "combat")
+          == nullptr);
+    CHECK(Content::resolveAnimation(parsed, "locomotion/running", "")
+          == nullptr);
+    const Content::AnimClip* die =
+        Content::resolveAnimation(parsed, "combat/death", "");
+    CHECK(die != nullptr);
+    CHECK_EQ(die->id, "die");
+
+    const Content::DirectionClip* east = Content::findDirection(*idle, "east");
+    CHECK(east != nullptr);
+    CHECK(east->frames.size() == 2);
+    CHECK(Content::findDirection(*idle, "west") == nullptr);
+    CHECK_EQ(east->frames[0].originX, 12);
+    CHECK_EQ(east->frames[0].originY, 40);
+
+    // Looping clip wraps.
+    CHECK_EQ(Content::frameIndexAt(*idle, *east, 0.0f), 0);
+    CHECK_EQ(Content::frameIndexAt(*idle, *east, 99.9f), 0);
+    CHECK_EQ(Content::frameIndexAt(*idle, *east, 100.0f), 1);
+    CHECK_EQ(Content::frameIndexAt(*idle, *east, 250.0f), 0);
+    CHECK_EQ(Content::frameIndexAt(*idle, *east, 400.0f), 0);
+    CHECK_EQ(Content::frameIndexAt(*idle, *east, 500.0f), 1);
+
+    // Non-looping clip holds the last frame.
+    const Content::DirectionClip* south = Content::findDirection(*die, "south");
+    CHECK(south != nullptr);
+    CHECK_EQ(Content::frameIndexAt(*die, *south, 0.0f), 0);
+    CHECK_EQ(Content::frameIndexAt(*die, *south, 150.0f), 1);
+    CHECK_EQ(Content::frameIndexAt(*die, *south, 250.0f), 2);
+    CHECK_EQ(Content::frameIndexAt(*die, *south, 99999.0f), 2);
+
+    bool threw = false;
+    try { Content::parseAtlasV2("not json at all"); }
+    catch (const std::exception&) { threw = true; }
+    CHECK(threw);
+}
+
+void testTileMap()
+{
+    const std::string tilemap =
+        R"({"width":3,"height":2,"tileSize":32,
+            "layers":[{"type":"grid","name":"ground","tiles":[1,2,0,1,2,2]}]})";
+    const std::string atlas =
+        R"({"textures":["s.png"],
+            "regions":[
+              {"texture":0,"x":0,"y":0,"w":0,"h":0},
+              {"texture":0,"x":0,"y":0,"w":32,"h":32},
+              {"texture":0,"x":32,"y":0,"w":32,"h":32}]})";
+    const std::string collision =
+        R"({"width":3,"height":2,"cells":[0,1,0,0,1,0]})";
+    const std::string manifest = R"({"playerSpawn":{"x":2,"y":1}})";
+
+    Content::TileMapData data =
+        Content::parseTileMap(tilemap, atlas, collision, manifest);
+
+    CHECK(data.width == 3);
+    CHECK(data.height == 2);
+    CHECK(data.tileSize == 32);
+    CHECK(data.ground.size() == 6);
+    CHECK_EQ(data.ground[0], 1);
+    CHECK_EQ(data.ground[2], 0);            // empty tile
+    CHECK_EQ(data.ground[3], 1);
+    CHECK_EQ(data.ground[5], 2);
+
+    // collision cell == 0 is walkable.
+    CHECK(data.walkable.size() == 6);
+    CHECK(data.walkable[0]);
+    CHECK(!data.walkable[1]);
+    CHECK(data.walkable[2]);
+    CHECK(data.walkable[3]);
+    CHECK(!data.walkable[4]);
+    CHECK(data.walkable[5]);
+
+    CHECK(data.textures.size() == 1);
+    CHECK_EQ(data.textures[0], "s.png");
+    CHECK(data.regions.size() == 3);
+    CHECK_EQ(data.regions[2].x, 32);
+
+    CHECK(data.spawnTileX == 2);
+    CHECK(data.spawnTileY == 1);
+
+    bool threw = false;
+    try { Content::parseTileMap("{}", atlas, collision, manifest); }
+    catch (const std::exception&) { threw = true; }
+    CHECK(threw);
+}
+
+void testSplitPoints()
+{
+    Content::AtlasRegion a;  a.texture = 0; a.x = 0;  a.y = 0; a.w = 32; a.h = 32;
+    Content::AtlasRegion b;  b.texture = 0; b.x = 90; b.y = 0; b.w = 30; b.h = 32;
+    Content::AtlasRegion c;  c.texture = 1; c.x = 0;  c.y = 0; c.w = 100; c.h = 100;
+    std::vector<Content::AtlasRegion> regions = { a, b, c };
+
+    // Sheet 300 wide, max 100 per chunk. The cut at 100 would slice region b
+    // [90,120), so it must shift to 120; the next cut still lands 100 later.
+    auto xs = Content::splitPoints(regions, 0, 300, 100, true);
+    CHECK_EQ(xs.size(), 4);
+    CHECK_EQ(xs[0], 0);
+    CHECK_EQ(xs[1], 120);
+    CHECK_EQ(xs[2], 220);
+    CHECK_EQ(xs[3], 300);
+    // No region may straddle a cut.
+    for (size_t k = 1; k + 1 < xs.size(); ++k)
+        for (const auto& r : regions)
+            if (r.texture == 0 && r.w > 0)
+                CHECK(!(r.x < xs[k] && xs[k] < r.x + r.w));
+
+    // Y-axis cut must consider the y extents only.
+    a.x = 0; a.y = 0; a.w = 32; a.h = 32;
+    b.x = 0; b.y = 90; b.w = 10; b.h = 30;
+    regions = { a, b, c };
+    auto ys = Content::splitPoints(regions, 0, 300, 100, false);
+    CHECK_EQ(ys[1], 120);                   // 100 inside [90,120) -> 120
+    for (size_t k = 1; k + 1 < ys.size(); ++k)
+        for (const auto& r : regions)
+            if (r.texture == 0 && r.h > 0)
+                CHECK(!(r.y < ys[k] && ys[k] < r.y + r.h));
+
+    // A sheet that already fits needs no splits.
+    auto small = Content::splitPoints(regions, 0, 90, 100, true);
+    CHECK_EQ(small.size(), 2);
+    CHECK_EQ(small[1], 90);
+
+    // A different texture must be untouched by splits of texture 0.
+    auto other = Content::splitPoints(regions, 1, 300, 100, true);
+    CHECK_EQ(other.size(), 4);              // 0,100,200,300
+}
+
 } // namespace
 
 int main()
@@ -288,6 +541,11 @@ int main()
     testRejections();
     testInterpolation();
     testGridWorld();
+    testJson();
+    testDirectionName();
+    testAtlasV2();
+    testTileMap();
+    testSplitPoints();
 
     std::printf("gridplay_tests: %d checks, %d failures\n",
                 g_checks, g_failures);
