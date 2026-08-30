@@ -88,20 +88,31 @@ void MapRenderer::draw(const Camera& cam) const
         for (int x = x0; x < x1; ++x)
         {
             int regionId = m_data.ground[(size_t)y * tw + x];
-            if (regionId <= 0)
-                continue;
-            const auto& region = m_textures.regions[(size_t)regionId];
-            if (region.w <= 0 || region.h <= 0)
-                continue;
-            if (region.texture < 0 ||
-                region.texture >= (int)m_textures.textures.size())
+            if (regionId <= 0 || regionId >= (int)m_textures.pieces.size())
                 continue;
 
-            Rectangle src{ (float)region.x, (float)region.y,
-                           (float)tile, (float)tile };
-            Vector2 dst{ (float)(x * tile), (float)(y * tile) };
-            DrawTextureRec(m_textures.textures[region.texture], src, dst,
-                           WHITE);
+            const auto& pieces = m_textures.pieces[(size_t)regionId];
+            if (pieces.empty())
+                continue;
+
+            // A region that straddled a 2048 chunk cut is stored as 2-4
+            // pieces; blit each one back at its offset within the tile.
+            float bx = (float)(x * tile);
+            float by = (float)(y * tile);
+            for (const auto& p : pieces)
+            {
+                if (p.w <= 0 || p.h <= 0)
+                    continue;
+                if (p.texture < 0 ||
+                    p.texture >= (int)m_textures.textures.size())
+                    continue;
+
+                Rectangle src{ (float)p.x, (float)p.y,
+                               (float)p.w, (float)p.h };
+                Vector2 dst{ bx + (float)p.ox, by + (float)p.oy };
+                DrawTextureRec(m_textures.textures[(size_t)p.texture], src,
+                               dst, WHITE);
+            }
         }
     }
 }

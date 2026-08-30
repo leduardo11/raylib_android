@@ -488,44 +488,100 @@ void testTileMap()
 
 void testSplitPoints()
 {
-    Content::AtlasRegion a;  a.texture = 0; a.x = 0;  a.y = 0; a.w = 32; a.h = 32;
-    Content::AtlasRegion b;  b.texture = 0; b.x = 90; b.y = 0; b.w = 30; b.h = 32;
-    Content::AtlasRegion c;  c.texture = 1; c.x = 0;  c.y = 0; c.w = 100; c.h = 100;
-    std::vector<Content::AtlasRegion> regions = { a, b, c };
-
-    // Sheet 300 wide, max 100 per chunk. The cut at 100 would slice region b
-    // [90,120), so it must shift to 120; the next cut still lands 100 later.
-    auto xs = Content::splitPoints(regions, 0, 300, 100, true);
-    CHECK_EQ(xs.size(), 4);
-    CHECK_EQ(xs[0], 0);
-    CHECK_EQ(xs[1], 120);
-    CHECK_EQ(xs[2], 220);
-    CHECK_EQ(xs[3], 300);
-    // No region may straddle a cut.
-    for (size_t k = 1; k + 1 < xs.size(); ++k)
-        for (const auto& r : regions)
-            if (r.texture == 0 && r.w > 0)
-                CHECK(!(r.x < xs[k] && xs[k] < r.x + r.w));
-
-    // Y-axis cut must consider the y extents only.
-    a.x = 0; a.y = 0; a.w = 32; a.h = 32;
-    b.x = 0; b.y = 90; b.w = 10; b.h = 30;
-    regions = { a, b, c };
-    auto ys = Content::splitPoints(regions, 0, 300, 100, false);
-    CHECK_EQ(ys[1], 120);                   // 100 inside [90,120) -> 120
-    for (size_t k = 1; k + 1 < ys.size(); ++k)
-        for (const auto& r : regions)
-            if (r.texture == 0 && r.h > 0)
-                CHECK(!(r.y < ys[k] && ys[k] < r.y + r.h));
-
-    // A sheet that already fits needs no splits.
-    auto small = Content::splitPoints(regions, 0, 90, 100, true);
+    // Fixed grid cuts: multiples of maxDim, never beyond the sheet size.
+    auto small = Content::gridCuts(90, 100);
     CHECK_EQ(small.size(), 2);
+    CHECK_EQ(small[0], 0);
     CHECK_EQ(small[1], 90);
 
-    // A different texture must be untouched by splits of texture 0.
-    auto other = Content::splitPoints(regions, 1, 300, 100, true);
-    CHECK_EQ(other.size(), 4);              // 0,100,200,300
+    auto med = Content::gridCuts(200, 100);
+    CHECK_EQ(med.size(), 3);
+    CHECK_EQ(med[0], 0);
+    CHECK_EQ(med[1], 100);
+    CHECK_EQ(med[2], 200);
+
+    auto big = Content::gridCuts(300, 100);
+    CHECK_EQ(big.size(), 4);
+    CHECK_EQ(big[1], 100);
+    CHECK_EQ(big[2], 200);
+    CHECK_EQ(big[3], 300);
+
+    auto flat = Content::gridCuts(4079, 2048);
+    CHECK_EQ(flat.size(), 3);
+    CHECK_EQ(flat[1], 2048);
+    CHECK_EQ(flat[2], 4079);
+
+    // Piece splitting: a region straddling cuts gets one piece per cell.
+    Content::AtlasRegion a;  a.texture = 0; a.x = 90; a.y = 95;
+                            a.w = 30;      a.h = 30;   // [90,120)x[95,125)
+    Content::AtlasRegion b;  b.texture = 0; b.x = 4;  b.y = 4;
+                            b.w = 32;      b.h = 32;   // fully inside cell
+    Content::AtlasRegion c;  c.texture = 1; c.x = 0;  c.y = 0;
+                            c.w = 100;     c.h = 100;  // different sheet
+    std::vector<Content::AtlasRegion> regions = { a, b, c };
+
+    auto xs = Content::gridCuts(300, 100);   // 0,100,200,300
+    auto ys = Content::gridCuts(300, 100);   // 0,100,200,300
+    auto pieces = Content::buildPieces(regions, 0, xs, ys, 3, 0);
+
+    // a straddles x=100 and y=100 -> 4 pieces.
+    CHECK_EQ(pieces[0].size(), 4);
+    // b is fully inside cell (0,0) -> 1 piece, whole region.
+    CHECK_EQ(pieces[1].size(), 1);
+    CHECK_EQ(pieces[1][0].texture, 0);
+    CHECK_EQ(pieces[1][0].x, 4);
+    CHECK_EQ(pieces[1][0].y, 4);
+    CHECK_EQ(pieces[1][0].w, 32);
+    CHECK_EQ(pieces[1][0].h, 32);
+    CHECK_EQ(pieces[1][0].ox, 0);
+    CHECK_EQ(pieces[1][0].oy, 0);
+    // c is on another texture: no pieces here.
+    CHECK_EQ(pieces[2].size(), 0);
+
+    // The pieces of `a` tile back together seamlessly over [0,30)x[0,30).
+    int covX0 = 999, covX1 = -1, covY0 = 999, covY1 = -1;
+    for (const auto& p : pieces[0])
+    {
+        CHECK(p.texture >= 0 && p.texture < 9);
+        CHECK(p.w > 0 && p.h > 0);
+        CHECK(p.x >= 0 && p.y >= 0);
+        if (p.ox < covX0) covX0 = p.ox;
+        if (p.ox + p.w > covX1) covX1 = p.ox + p.w;
+        if (p.oy < covY0) covY0 = p.oy;
+        if (p.oy + p.h > covY1) covY1 = p.oy + p.h;
+    }
+    CHECK_EQ(covX0, 0);
+    CHECK_EQ(covY0, 0);
+    CHECK_EQ(covX1, 30);       // full region width covered
+    CHECK_EQ(covY1, 30);       // full region height covered
+
+    // Exact cell assignment: a = [90,120)x[95,125) in sheet 300 with cuts
+    // every 100 -> cells (0,0)=slot0, (0,1)=slot3, (1,0)=slot1, (1,1)=slot4
+    // (slot = row*ncols + col, ncols = 3).
+    CHECK_EQ(pieces[0][0].texture, 0);   CHECK_EQ(pieces[0][0].x, 90); CHECK_EQ(pieces[0][0].y, 95);
+    CHECK_EQ(pieces[0][0].w, 10);        CHECK_EQ(pieces[0][0].h, 5);
+    CHECK_EQ(pieces[0][0].ox, 0);        CHECK_EQ(pieces[0][0].oy, 0);
+
+    CHECK_EQ(pieces[0][1].texture, 3);   CHECK_EQ(pieces[0][1].x, 90); CHECK_EQ(pieces[0][1].y, 0);
+    CHECK_EQ(pieces[0][1].w, 10);        CHECK_EQ(pieces[0][1].h, 25);
+    CHECK_EQ(pieces[0][1].ox, 0);        CHECK_EQ(pieces[0][1].oy, 5);
+
+    CHECK_EQ(pieces[0][2].texture, 1);   CHECK_EQ(pieces[0][2].x, 0);  CHECK_EQ(pieces[0][2].y, 95);
+    CHECK_EQ(pieces[0][2].w, 20);        CHECK_EQ(pieces[0][2].h, 5);
+    CHECK_EQ(pieces[0][2].ox, 10);       CHECK_EQ(pieces[0][2].oy, 0);
+
+    CHECK_EQ(pieces[0][3].texture, 4);   CHECK_EQ(pieces[0][3].x, 0);  CHECK_EQ(pieces[0][3].y, 0);
+    CHECK_EQ(pieces[0][3].w, 20);        CHECK_EQ(pieces[0][3].h, 25);
+    CHECK_EQ(pieces[0][3].ox, 10);       CHECK_EQ(pieces[0][3].oy, 5);
+
+    // A second sheet starts its chunk slots right after this one's 9 cells.
+    auto pieces2 = Content::buildPieces(regions, 1, xs, ys, 3, 9);
+    CHECK_EQ(pieces2[2].size(), 1);          // c = [0,100)x[0,100): one cell
+    CHECK_EQ(pieces2[2][0].texture, 9);
+    CHECK_EQ(pieces2[2][0].w, 100);
+    CHECK_EQ(pieces2[2][0].h, 100);
+    CHECK_EQ(pieces2[2][0].ox, 0);
+    CHECK_EQ(pieces2[2][0].oy, 0);
 }
 
 } // namespace

@@ -107,22 +107,27 @@ void PlayerSprite::draw(const PlayerPresentationState& s, float tileSize)
     if (frame < 0 || frame >= (int)direction->frames.size()) return;
 
     const Content::SpriteFrame& f = direction->frames[(size_t)frame];
-    if (f.region <= 0 || f.region >= (int)m_textures.regions.size()) return;
+    if (f.region <= 0 || f.region >= (int)m_textures.pieces.size()) return;
 
-    const Content::AtlasRegion& region = m_textures.regions[(size_t)f.region];
-    if (region.w <= 0 || region.h <= 0) return;
-    if (region.texture < 0 ||
-        region.texture >= (int)m_textures.textures.size())
-        return;
+    const auto& pieces = m_textures.pieces[(size_t)f.region];
+    if (pieces.empty()) return;
 
     // Soft grounding shadow at the feet.
     DrawCircleV(s.position, tileSize * 0.22f, Fade(BLACK, 0.35f));
 
-    Rectangle src{ (float)region.x, (float)region.y,
-                   (float)region.w, (float)region.h };
-    Vector2 topLeft{ s.position.x - (float)f.originX,
-                     s.position.y - (float)f.originY };
-    DrawTextureRec(m_textures.textures[region.texture], src, topLeft, WHITE);
+    Vector2 base{ s.position.x - (float)f.originX,
+                  s.position.y - (float)f.originY };
+    for (const auto& p : pieces)
+    {
+        if (p.w <= 0 || p.h <= 0) continue;
+        if (p.texture < 0 || p.texture >= (int)m_textures.textures.size())
+            continue;
+
+        Rectangle src{ (float)p.x, (float)p.y, (float)p.w, (float)p.h };
+        Vector2 dst{ base.x + (float)p.ox, base.y + (float)p.oy };
+        DrawTextureRec(m_textures.textures[(size_t)p.texture], src, dst,
+                       WHITE);
+    }
 }
 
 } // namespace Presentation
