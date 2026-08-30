@@ -11,6 +11,9 @@ public:
     Vector2 origin() const { return m_origin; }
     float viewWidth()  const { return m_viewW; }
     float viewHeight() const { return m_viewH; }
+    float zoom()       const { return m_zoom; }
+
+    void setZoom(float zoom);
 
     void init(float worldWidthPx, float worldHeightPx,
               float viewportWidth, float viewportHeight);
@@ -26,6 +29,7 @@ private:
     float m_worldH = 0.0f;
     float m_viewW  = 0.0f;
     float m_viewH  = 0.0f;
+    float m_zoom   = 1.0f;
 
     void clampOrigin();
 };

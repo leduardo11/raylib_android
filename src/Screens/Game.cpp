@@ -34,6 +34,11 @@ constexpr float FALLBACK_VIEW_H = 600.0f;
 
 constexpr float JOYSTICK_ZONE_W = LOGICAL_W * 0.70f; // left band grabs joystick
 
+// Camera zoom: zoom 1.0 shows 40x22.5 tiles (LOGICAL_W / TILE_SIZE) — far too
+// wide for mobile. Standard ARPG feel keeps the player large and the visible
+// map tight. 2.0 -> 20x11.25 tiles; tile the map texture is upscaled.
+constexpr float CAM_ZOOM = 2.0f;
+
 constexpr Color CLR_BG        = { 0x12, 0x14, 0x1C, 0xFF };
 constexpr Color CLR_WALKABLE  = { 0x22, 0x2A, 0x38, 0xFF };
 constexpr Color CLR_WALK_HIL  = { 0x2A, 0x35, 0x46, 0xFF };
@@ -81,6 +86,7 @@ void Game::initWorld()
         m_camera.init((float)(d.width * d.tileSize),
                       (float)(d.height * d.tileSize),
                       VIEW_W, VIEW_H);
+        m_camera.setZoom(CAM_ZOOM);
         m_camera.reset(Vector2{ (float)(d.spawnTileX * d.tileSize +
                                         d.tileSize / 2),
                                 (float)(d.spawnTileY * d.tileSize +
@@ -100,6 +106,7 @@ void Game::initWorld()
         m_camera.init(FALLBACK_MAP_W * TILE_SIZE,
                       FALLBACK_MAP_H * TILE_SIZE,
                       FALLBACK_VIEW_W, FALLBACK_VIEW_H);
+        m_camera.setZoom(CAM_ZOOM);
         m_camera.reset(Vector2{ 15 * TILE_SIZE, 10 * TILE_SIZE });
     }
 }

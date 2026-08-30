@@ -20,6 +20,12 @@ void Camera::reset(Vector2 focus)
     clampOrigin();
 }
 
+void Camera::setZoom(float zoom)
+{
+    if (zoom > 0.0f)
+        m_zoom = zoom;
+}
+
 void Camera::update(float dt, Vector2 focus)
 {
     float k = CAM_LERP;
@@ -30,14 +36,17 @@ void Camera::update(float dt, Vector2 focus)
 
 void Camera::clampOrigin()
 {
+    const float viewW = m_viewW / m_zoom;
+    const float viewH = m_viewH / m_zoom;
+
     Vector2 min{ 0.0f, 0.0f };
-    Vector2 max{ m_worldW - m_viewW, m_worldH - m_viewH };
+    Vector2 max{ m_worldW - viewW, m_worldH - viewH };
 
-    if (max.x < min.x) { max.x = (m_worldW - m_viewW) * 0.5f; min.x = max.x; }
-    if (max.y < min.y) { max.y = (m_worldH - m_viewH) * 0.5f; min.y = max.y; }
+    if (max.x < min.x) { max.x = (m_worldW - viewW) * 0.5f; min.x = max.x; }
+    if (max.y < min.y) { max.y = (m_worldH - viewH) * 0.5f; min.y = max.y; }
 
-    m_origin.x = std::clamp(m_focus.x - m_viewW * 0.5f, min.x, max.x);
-    m_origin.y = std::clamp(m_focus.y - m_viewH * 0.5f, min.y, max.y);
+    m_origin.x = std::clamp(m_focus.x - viewW * 0.5f, min.x, max.x);
+    m_origin.y = std::clamp(m_focus.y - viewH * 0.5f, min.y, max.y);
 }
 
 void Camera::apply()
@@ -46,7 +55,7 @@ void Camera::apply()
         Vector2{ 0, 0 },
         m_origin,
         0.0f,
-        1.0f
+        m_zoom
     });
 }
 
