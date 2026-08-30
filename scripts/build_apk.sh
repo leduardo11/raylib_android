@@ -40,11 +40,14 @@ if [ ! -f local.properties ]; then
     echo "    [created local.properties]"
 fi
 
-# Prune stale CMake cache from previous builds to avoid configuration conflicts
-if [ -d "$PROJECT_DIR/artifacts/.cxx" ]; then
-    echo "    [pruning stale CMake caches]"
-    find "$PROJECT_DIR/artifacts/.cxx" -name 'CMakeCache.txt' -delete 2>/dev/null || true
-fi
+# Do NOT prune CMakeCache.txt here. Deleting it forces a full reconfigure in a
+# populated build dir, and CMake 3.22 (Android SDK) rewrites CMakeCache.txt and
+# the compiler-detect files with an mtime NEWER than the regenerated
+# build.ninja. Those are implicit deps of the `build build.ninja: RERUN_CMAKE`
+# edge, so ninja loops forever: "manifest 'build.ninja' still dirty after 100
+# tries". AGP tracks configuration itself (fingerprint binaries + ninja regen),
+# so no manual cache invalidation is needed. If the cache ever does go stale,
+# remove artifacts/.cxx once and rebuild.
 
 # Build
 ./gradlew assemble"${BUILD_TYPE}" --warning-mode all 2>&1

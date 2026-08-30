@@ -59,7 +59,7 @@ android {
         cmake {
             path '../../src/CMakeLists.txt'
             version '3.22.1'
-            buildStagingDirectory file('../../../artifacts/.cxx')
+            buildStagingDirectory file('../../artifacts/.cxx')
         }
     }
 

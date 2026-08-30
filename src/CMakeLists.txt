@@ -45,11 +45,20 @@ endif()
 FetchContent_MakeAvailable(raylib)
 
 # ── Fetch SQLite3 ─────────────────────────────────────────────────────────
-FetchContent_Declare(
-    sqlite3
-    URL https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
+# DOWNLOAD_EXTRACT_TIMESTAMP requires CMake >= 3.24 (and the Android SDK's
+# 3.22.1 mishandles it: "At least one entry of URL is a path"). Gate it.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+    FetchContent_Declare(
+        sqlite3
+        URL https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+else()
+    FetchContent_Declare(
+        sqlite3
+        URL https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
+    )
+endif()
 FetchContent_GetProperties(sqlite3)
 if(NOT sqlite3_POPULATED)
     FetchContent_Populate(sqlite3)
@@ -94,4 +103,5 @@ if(PLATFORM_ANDROID)
     )
 else()
     target_link_libraries(raylib_android PRIVATE raylib sqlite3)
+
 endif()
