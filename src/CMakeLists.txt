@@ -104,4 +104,15 @@ if(PLATFORM_ANDROID)
 else()
     target_link_libraries(raylib_android PRIVATE raylib sqlite3)
 
+    # ── Desktop-only self-test (P0a simulation/input logic) ──────────────
+    add_executable(gridplay_tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tests/gridplay_tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Game/Simulation/GridWorld.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Game/Simulation/PlayerMovementSimulation.cpp
+    )
+    target_include_directories(gridplay_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/AndroidEngine
+    )
+    target_link_libraries(gridplay_tests PRIVATE raylib)
 endif()

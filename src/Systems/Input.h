@@ -11,6 +11,11 @@ struct Input {
     bool isDown(int key)     const { return IsKeyDown(key); }
     bool isTouched()         const { return GetTouchPointCount() > 0; }
 
+    bool isPointerDown() const
+    {
+        return IsMouseButtonDown(MOUSE_BUTTON_LEFT) || GetTouchPointCount() > 0;
+    }
+
     Vector2 touchPos() const
     {
         if (GetTouchPointCount() > 0)

@@ -26,8 +26,13 @@ raylib_android/
 │   ├── Screens/          # Game screens (state machine)
 │   │   ├── Splash        # 3s splash -> auto-transition to MainMenu
 │   │   ├── MainMenu      # Play / Settings / Exit buttons
-│   │   └── Game          # Placeholder gameplay screen
+│   │   └── Game          # GridPlay: P0a movement-feel screen
 │   ├── Game/             # Game-specific logic
+│   │   ├── Simulation/   # HelbreathDirection (N=1..NW=8), GridWorld, committed
+│   │   │                 #   steps, ActiveStep + latest intent, walk/run timing
+│   │   ├── Input/        # Floating joystick (dead zone -> 8-way), keyboard,
+│   │   │                 #   InputMapper -> MoveIntent
+│   │   ├── Presentation/ # Read-only PlayerRenderer + Camera (interpolated state)
 │   │   ├── Entities      # Entity manager (create/destroy/query)
 │   │   ├── Components    # Transform, Render, Physics structs
 │   │   └── Logic         # Game simulation, collision detection
@@ -36,6 +41,8 @@ raylib_android/
 │   └── app/              # Android Gradle project
 │       ├── build.gradle
 │       └── src/main/AndroidManifest.xml
+├── tests/
+│   └── gridplay_tests.cpp  # Desktop-only self-tests for P0a sim/input logic
 └── scripts/
     ├── build_apk.sh      # Build, sign, and verify APK
     ├── clean.sh          # Remove build artifacts
@@ -108,6 +115,12 @@ are recompiled. No manual cleanup needed between builds.
 ```bash
 cmake -B artifacts/linux -S src && cmake --build artifacts/linux -j$(nproc)
 ./artifacts/linux/raylib_android
+```
+
+### Desktop self-tests (P0a simulation/input)
+
+```bash
+./artifacts/linux/gridplay_tests
 ```
 
 ## Install
