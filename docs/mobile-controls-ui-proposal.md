@@ -3,8 +3,10 @@
 **Date:** 2026-08-30
 **Repo:** `raylib_android` (this project)
 **Source of truth:** `helbreath_lite` `src/client/` (input, hotkeys, HUD, wire ops)
-**Status:** Proposal — design only; implements the agreed
-`PlayerCommand` boundary model (never synthetic direction through `handleInput()`).
+**Status:** Approved architecture, decisions incorporated (v2):
+immediate combat tap, NPC context ring, **hold-to-run**, separate
+SUPER button, **expandable window menu**, **explicit `SetTarget(target, verb)`**.
+Build order unchanged: multitouch is step 7 on top of the command boundary.
 
 ---
 
@@ -15,7 +17,8 @@ keyboard + mouse — onto a **touch-only** Android/desktop surface, using the al
 agreed architecture:
 
 ```
-Tap → TargetResolver → GreedyNavigator → NavExecutor → next Move
+Tap → TargetResolver → SetTarget(target, verb)
+   → GreedyNavigator → NavExecutor → next Move (→ Action when reached)
 ```
 
 and the command boundary:
@@ -93,24 +96,22 @@ must reproduce it, not invent a new one where possible:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ [C] [I] [M] [K] [T] [⚙]  ── top-right window bar (F5-F10 parity)        │
+│                                                                    [☰]  │
 │                                                                          │
 │                                                                          │
 │   world view: tap ground = move there                                     │
-│               tap enemy  = move-to-range + attack                         │
+│               tap enemy  = immediate move-to-range + attack               │
 │               tap item   = move-to-range + pickup                         │
-│               drag right band = pan (future) / nothing now                │
+│               tap NPC    = select → context ring (Talk/Attack/…)          │
 │                                                                          │
 │                                                                          │
-│                                                                          │
-│  ┌───────────┐                              ┌────────────┐  HP  [C]  [B]  │
-│  │ joystick  │     (center dead zone:       │ ⚔ Attack   │  MP  [M]  [S]  │
-│  │ left band │      tap = release/stop)     │  hold=rep  │  ATK    RUN    │
-│  │ 70% width │                              └────────────┘               │
-│  └───────────┘                                 magic slots F2 F3 F4      │
-│                                                                          │
+│  ┌───────────┐        [HP][MP]    ┌────────────┐  [SUPER]                 │
+│  │ joystick  │ free-   [ATK slot] │ ⚔ Attack   │  magic F2 F3 F4          │
+│  │ left band │ band    [RUN hold] │  hold=rep  │                         │
+│  │ 70% width │                    └────────────┘                         │
+│  └───────────┘      (right band non-button targets)                      │
 └──────────────────────────────────────────────────────────────────────────┘
-                     [◀  HP/MP/SP gauges read-only bottom ▼]
+                  [◀ HP/MP/SP/EXP gauges read-only bottom ▼]
 ```
 
 **Finger-slots** (multi-touch, raylib `GetTouchPointCount/Position/Id`):
@@ -118,28 +119,37 @@ must reproduce it, not invent a new one where possible:
 | Slot | Zone | Acts as |
 |---|---|---|
 | Thumb L | left 70% band | floating joystick → `Move` |
-| Thumb R | right 30% band (non-button) | show cursor + cascade tap → `SetTarget` |
+| Thumb R | right 30% band (non-button) | target reticle → `SetTarget(target, verb)` |
 | Button presses | any button hit | command, not pointer |
 
 Rules:
 1. A touch that lands on a HUD button NEVER becomes a joystick/target action.
 2. A touch on the right band shows a **target reticle** at the tile; release fires
-   `SetTarget` (tap-select then tap-act, OR immediate — see §5).
+   `SetTarget(position, targetId, verb)` — immediate, no second tap for combat.
 3. Joystick zone + right-band are disjoint; no arbitration needed beyond
    "button hit wins if it was a button."
+4. **☰** MENU (top-right) expands on tap into the six windows, collapses on
+   selection or outside-tap (never a permanent six-icon bar).
 
 ---
 
 ## 4. Command mapping (original → PlayerCommand → ProtocolCommand)
 
+**`SetTarget(target, verb)`** carries the verb explicitly — the resolver never
+guesses intent from target type:
+
+```
+SetTarget { Position, TargetId?, Verb: Move | Attack | Pickup | Interact }
+```
+
 | Original | PlayerCommand | ProtocolCommand → wire |
 |---|---|---|
-| LMB ground | `SetTarget{victory tile}` | `Type::Move/Run` via greedy steps |
-| LMB enemy | `SetTarget{entity}` then `Attack{targetId, actionType}` when in range | `Type::Attack` (`make_motion_attack`, target_id, action_type) |
-| LMB self / item | `SetTarget{item}` → pickup when adjacent | `Type::GetItem` |
-| RMB stop+turn | `Move{none}` + `SetTarget{adjacent}` (turn-only) | `Type::stop` + dir |
-| Shift (held) | `ToggleStack{run}` (momentary) | Move→Run conversion |
-| Ctrl+R | `ToggleStack{run}` (persistent) | same |
+| LMB ground | `SetTarget{tile, Move}` | `Type::Move/Run` via greedy steps |
+| LMB enemy | `SetTarget{ent, Attack}` → `Attack{targetId, actionType}` when in range | `Type::Attack` (`make_motion_attack`, target_id, action_type) |
+| LMB self / item | `SetTarget{item, Pickup}` → pickup when adjacent | `Type::GetItem` |
+| RMB stop+turn | `Move{none}` + `SetTarget{adjacent, Move}` (turn-only) | `Type::stop` + dir |
+| Shift (held) | `SetLocomotion{Run}` (momentary, touch: RUN button held) | Move→Run conversion |
+| Ctrl+R | `ToggleStack{run}` (persistent, PC-only) | same |
 | Tab / Shift+Tab | `ToggleStack{stance}` | `ToggleCombatMode` |
 | Home | `ToggleStack{safeAttack}` | `ToggleSafeAttackMode` |
 | PageUp | `Cast{specAbility}` | `RequestActivateSpecAbility` |
@@ -154,22 +164,21 @@ Rules:
 
 ## 5. Interaction model details
 
-### 5.1 Tap → two-tap separation (reticle)
+### 5.1 Reticle — immediate combat, context ring for NPCs
 
-Because touch has no hover, use the **tap = select, second tap = confirm** pattern
-only for **NPCs and multi-option interactions** (talk/attack/trade). For the
-high-frequency combat case keep it one-tap:
-
-- **Tap enemy** → immediate attack sequence: greedy-walk into range → `Attack`.
-- **Tap ground item** → walk-to-range → `GetItem`.
+Because touch has no hover:
+- **Tap enemy** → immediate `SetTarget{ent, Attack}`: greedy-walk into range → `Attack`.
+- **Tap ground item** → immediate `SetTarget{item, Pickup}`: walk-to-range → `GetItem`.
 - **Tap NPC** → select (reticle + nameplate), a small **context ring** appears:
-  Talk / Attack / Trade / Inspect → tap one to confirm.
-- **Tap ground** → walk to tile (tap-release = fire, so a *long-press* = nothing
-  until release; no accidental single-tap cancellation).
+  Talk / Attack / Trade / Inspect → tap one to fire `SetTarget{ent, Interact|Attack}`.
+- **Tap ground** → immediate `SetTarget{tile, Move}`.
+- **RMB parity (turn-in-place)** → tap ground adjacent to self = `Move{none}` +
+  `SetTarget{adjacent, Move}` → stop + face.
 
-This keeps exactly one primary action per tap with a confirmed second step only when
-the world offers multiple verbs. It stays true to `command_processor` semantics
-(LMB = "do the best thing with this target").
+**No two-tap confirmation for ground/enemy targets** — combat must feel immediate.
+The explicit verb is carried **on the command** (`SetTarget{..., verb}`), not inferred
+by the resolver, so one tap = one unambiguous action. Only multi-verb NPCs get the
+ring, and the ring is a choose-a-verb, not a confirm-my-guess.
 
 ### 5.2 Attack button (right band)
 
@@ -177,19 +186,18 @@ the world offers multiple verbs. It stays true to `command_processor` semantics
 - **SUPER** is a **separate momentary modifier button** next to Attack
   (super attack never fires *only* from ATK; it requires the modifier + a valid
   `can_super_attack` target), matching `command_processor`'s Alt-super logic
-  (`Game.cpp:4161`, distance thresholds by weapon).
+  (`Game.cpp:4161`, distance thresholds by weapon). Independent button = visible
+  affordance, near-impossible accidental supers, and the server-side
+  `can_super_attack` validation stays authoritative.
 - Attack button disabled when no target entity in `ITargetWorld`.
 
 ### 5.3 Modifier buttons (RUN / SUPER / STANCE)
 
 | Button | Momentary or toggle | Maps to |
 |---|---|---|
-| RUN | toggle (matches original Ctrl+R persistent + Shift momentary both hunger for SP) | `ToggleStack{run}` |
+| RUN | **momentary (hold-to-run)** — while held, Move uses `Run`; release → `Walk`. Touch has multitouch, so L-thumb moves while R-thumb holds RUN; no hidden persistent state. (Persistent mode = PC-only `Ctrl+R`, or a future long-press option if playtesting wants it.) | `SetLocomotion{Run\|Walk}` |
 | SUPER | momentary (hold opens super, like Alt) | super flag for next `Attack` |
 | STANCE (C) | toggle | `ToggleCombatMode` |
-
-Explicit toggles make the state visible in the HUD, which the cursor-game never
-needed but touch does.
 
 ### 5.4 Consumables & magic
 
@@ -201,29 +209,31 @@ needed but touch does.
 - Desktop key parity preserved verbatim (Insert/Delete/F-keys) so PC dev matches
   hb_lite 1:1.
 
-### 5.5 Windows (F5..F10 parity)
+### 5.5 Windows — expandable ☰ menu (not a permanent six-icon bar)
 
-Top-right 6-icon bar = `DialogBox_HudPanel::TOGGLE_BUTTONS[]` order:
-Character / Inventory / Magics / Skills / Chat Log / System Menu. Each opens the
-real dialog screen; the gear = SystemMenu (Esc equivalence). Chat opens a text input
-pane (soft keyboard).
+Single **☰ MENU** button, top-right. Tap → fans out the six windows
+(`DialogBox_HudPanel::TOGGLE_BUTTONS[]` order): Character / Inventory / Magics /
+Skills / Chat Log / System Menu. Select one → open dialog + menu collapses.
+Outside-tap collapses. Frequent-actions (HP/MP/combat/CRIT) stay on-screen always;
+rare windows hide behind one tap. Chat opens a text input pane (soft keyboard);
+gear/SysMenu is Esc equivalence.
 
-### 5.6 Stance/facing niceties
+### 5.6 Facing niceties
 
 - Release joystick mid-step → player keeps facing last direction (already sim behavior).
-- Tap **ground adjacent to self** = turn-in-place stop (`Type::stop`) — the RMB
-  parity path, reachable through the targeting reticle.
 
 ---
 
 ## 6. GreedyNavigator / NavExecutor seam (no synthetic directions)
 
-`SetTarget` never encodes a direction; it encodes a **position + verb**.
+`SetTarget` never encodes a direction; it encodes a **position + targetId + verb**.
 The navigation seam resolves it:
 
 ```
-TargetResolver → GreedyNavigator → NextDirectionResult{dir|reached|blocked|stuck}
-  → NavExecutor → Move{dir, locomotion}  (one per committed step)
+TargetResolver → SetTarget{position, targetId, verb}
+   → GreedyNavigator → NextDirectionResult{dir|reached|blocked|stuck}
+   → NavExecutor → Move{dir, locomotion}  (one per committed step)
+   → Attack / Pickup / Interact when reached
 ```
 
 - Manual joystick input **suspends** NavExecutor; releasing resumes the tail if the
@@ -260,13 +270,17 @@ attack enablement). It never sees wire structs.
 
 ---
 
-## 9. Open decisions (for review)
+## 9. Decisions (resolved in review)
 
-1. **Reticle model**: immediate fire vs tap-select-tap-confirm for ground/enemy —
-   proposal: immediate for combat, reticle+ring for multi-verb NPC context.
-2. **RUN binding**: single toggled button vs holding to run. Proposal: toggle
-   (persistent) + the joystick already conveys direction; SP gate later.
-3. **Super attack trigger**: separate momentary SUPER button (proposal) vs
-   ATK-button modifiers.
-4. **Window bar**: 6 icons crowded vs a single "menu" button that fans out.
-   Proposal: 6 icons at 1280 width, fold to fan-out below ~10" devices.
+| Decision | Verdict |
+|---|---|
+| Combat tap | Immediate — no two-tap confirm for ground/enemy targets |
+| NPC interaction | Reticle + context **ring** (choose a verb, not confirm a guess) |
+| RUN | **Momentary hold-to-run** (multitouch frees the R-thumb); no hidden persistent state; persistent = PC-only Ctrl+R or optional later long-press |
+| SUPER | Separate momentary button — visible affordance, no accidental supers; server `can_super_attack` stays authoritative |
+| Windows | Single **☰** menu expanding to the six windows; collapses on selection/outside-tap |
+| No synthetic directions | Kept — joystick and nav never share `handleInput()` |
+| HUD → commands only | Kept — HUD consumes only `PlayerCommand[]` + `ITargetWorld` |
+
+**Architectural note:** mobile is simply **another `PlayerInputFrame` producer** next
+to keyboard/mouse/network — never a second gameplay implementation.

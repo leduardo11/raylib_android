@@ -4,6 +4,8 @@
 #include "Systems/Input.h"
 #include "Systems/Rendering.h"
 #include "Game/Presentation/PlayerPresentationState.h"
+#include "Game/Protocol/CommandTranslator.h"
+#include "Game/Protocol/ProtocolCommand.h"
 #include "raylib.h"
 #include "rlgl.h"
 
@@ -32,8 +34,6 @@ constexpr int   FALLBACK_MAP_H = 20;
 constexpr float FALLBACK_VIEW_W = 800.0f;
 constexpr float FALLBACK_VIEW_H = 600.0f;
 
-constexpr float JOYSTICK_ZONE_W = LOGICAL_W * 0.70f; // left band grabs joystick
-
 // Camera zoom: zoom 1.0 shows 40x22.5 tiles (LOGICAL_W / TILE_SIZE) — far too
 // wide for mobile. Standard ARPG feel keeps the player large and the visible
 // map tight. 2.0 -> 20x11.25 tiles; tile the map texture is upscaled.
@@ -46,17 +46,49 @@ constexpr Color CLR_BLOCKED   = { 0x16, 0x16, 0x20, 0xFF };
 constexpr Color CLR_GRID      = { 0x0B, 0x0E, 0x14, 0xFF };
 constexpr Color CLR_SPAWN     = { 0x3F, 0x6E, 0x8F, 0xFF };
 
+constexpr Color CLR_RETICLE   = { 0x9E, 0xE6, 0x4F, 0xFF }; // valid (green)
+constexpr Color CLR_RETICLE_B = { 0xE0, 0x4A, 0x4A, 0xFF }; // invalid (red)
+constexpr Color CLR_NAV       = { 0x4F, 0xC8, 0xE6, 0xFF }; // nav target
+constexpr Color CLR_MONSTER   = { 0xE0, 0x5A, 0x5A, 0xFF };
+constexpr Color CLR_ITEM      = { 0xE6, 0xC8, 0x4F, 0xFF };
+constexpr Color CLR_NPC       = { 0x5A, 0xE0, 0x8A, 0xFF };
+
+// Demo wire context: the app has no real inventory/equipment, so expose fixed
+// demo bindings so HUD commands actually translate+encode (the "emit and drop"
+// demo). Hp slot 0, Mp slot 1, magic shortcuts 0..2.
+class DemoWireContext final : public Protocol::IWireContext {
+public:
+    int16_t attackActionType(bool /*super*/) const override { return 3; }
+
+    int16_t consumableSlot(Input::UseItemSlot slot) const override
+    {
+        return (slot == Input::UseItemSlot::Hp) ? 0 : 1;
+    }
+
+    bool shortcutBinding(uint8_t shortcutSlot,
+                         Protocol::ShortcutBinding& out) const override
+    {
+        out = Protocol::ShortcutBinding{};
+        out.isValid = true;
+        out.isMagic = true;
+        out.magicId = 10 + shortcutSlot; // demo magic ids
+        return true;
+    }
+};
+
 } // namespace
 
 Game::Game(Core::Application& app)
     : m_app(app)
-    , m_btnBack(Systems::UI::makeButton("Back", 1280 - 116, 22, 100, 36))
+    , m_btnBack(Systems::UI::makeButton("Back", 12, 12, 80, 28))
 {
 }
 
 void Game::onEnter()
 {
     initWorld();
+    m_gameWorld.setGrid(&m_world);
+    m_gameWorld.setPlayerId(1);
     TraceLog(LOG_INFO, "Entered Game screen (GridPlay)");
 }
 
@@ -109,61 +141,137 @@ void Game::initWorld()
         m_camera.setZoom(CAM_ZOOM);
         m_camera.reset(Vector2{ 15 * TILE_SIZE, 10 * TILE_SIZE });
     }
+
+    // Demo targets around the spawn (only when their tile is walkable, so a
+    // real map's walls just skip them).
+    const Simulation::GridCoord spawn = m_sim.tilePosition();
+    struct DemoEnt { int dx, dy; Simulation::TargetKind k; bool a, p, i; };
+    const DemoEnt ents[] = {
+        {  8, 0, Simulation::TargetKind::Monster, true, false, false },
+        { -4, 2, Simulation::TargetKind::Item,    false, true,  false },
+        {  0, -3, Simulation::TargetKind::Npc,    true,  false, true  },
+    };
+    uint32_t nextId = 10;
+    for (const DemoEnt& e : ents)
+    {
+        const Simulation::GridCoord at{ spawn.x + e.dx, spawn.y + e.dy };
+        if (!m_world.isWalkable(at)) continue;
+        m_gameWorld.add(Simulation::TargetInfo{
+            nextId++, at, e.k, e.a, e.p, e.i });
+    }
 }
 
-void Game::handleInput()
+Simulation::GridCoord Game::screenToTile(float sx, float sy) const
 {
-    Vector2 pointer = m_app.input().touchPos();
-    bool pointerDown = m_app.input().isPointerDown();
-    bool pointerPressed = m_app.input().isPointerPressed();
+    // Inverse of the camera render transform: world = (screen - offset)/zoom +
+    // origin (raylib GetScreenToWorld2D with offset (0,0)).
+    const float wx = m_camera.origin().x + sx / m_camera.zoom();
+    const float wy = m_camera.origin().y + sy / m_camera.zoom();
+    return Simulation::GridCoord{ (int)(wx / TILE_SIZE),
+                                  (int)(wy / TILE_SIZE) };
+}
 
-    Systems::UI::updateButton(m_btnBack, pointer, pointerPressed);
-    if (m_btnBack.clicked)
+void Game::routeFrame()
+{
+    m_manualActive = false;
+
+    for (auto it = m_frame.begin(); it != m_frame.end(); ++it)
     {
-        m_app.setScreen(new MainMenu(m_app));
-        return;
+        const Input::PlayerCommand& cmd = *it;
+
+        if (const auto* mv = std::get_if<Input::PlayerMove>(&cmd))
+        {
+            // Manual (joystick/keys) movement: suspend nav, drive the sim.
+            m_manualActive = true;
+            m_sim.handleInput(mv->direction, mv->locomotion);
+        }
+        else if (const auto* st = std::get_if<Input::PlayerSetTarget>(&cmd))
+        {
+            if (const auto resolved =
+                    Simulation::TargetResolver::resolve(m_gameWorld, *st))
+            {
+                m_nav.engage(*resolved);
+                m_nav.setSuspended(false);
+            }
+            // unresolvable SetTarget: silently dropped (fail closed)
+        }
+        else
+        {
+            // Attack / Cast / UseItem / Toggle: translate → encode → emit-dropped
+            // (demonstration; real networking arrives later).
+            emitProtocol(cmd);
+        }
     }
 
-    if (pointerDown && !m_joystick.active() &&
-        pointer.x < JOYSTICK_ZONE_W)
-    {
-        m_joystick.update(pointer, true);
-    }
-    else if (m_joystick.active() && pointerDown)
-    {
-        m_joystick.update(pointer, true);
-    }
-    else
-    {
-        m_joystick.update(pointer, false);
-    }
+    if (m_manualActive && !m_prevManualActive)
+        m_nav.setSuspended(true);   // manual grab: suspend nav, keep target
+    else if (!m_manualActive && m_prevManualActive)
+        m_nav.setSuspended(false);  // manual release: resume nav from here
+    m_prevManualActive = m_manualActive;
+}
 
-    m_mapper.update(m_joystick);
-
-    const auto& intent = m_mapper.intent();
-    if (intent.active)
+void Game::emitProtocol(const Input::PlayerCommand& cmd)
+{
+    static DemoWireContext wireCtx;
+    const std::vector<Protocol::ProtocolCommand> wire =
+        Protocol::CommandTranslator::translate(cmd, m_gameWorld, wireCtx);
+    for (const auto& wc : wire)
     {
-        Simulation::Locomotion loco = intent.locomotion;
-        if (m_walkMode)
-            loco = Simulation::Locomotion::Walking;
-        m_sim.handleInput(intent.direction, loco);
-    }
-    else
-    {
-        m_sim.releaseInput();
+        const std::vector<uint8_t> bytes =
+            Protocol::HelbreathPacketEncoder::encode(wc, m_encodeCtx);
+        // Demo only: log the size and drop the packet (no server yet).
+        TraceLog(LOG_INFO, "Game: emit %zu bytes (type=%u)", bytes.size(),
+                 (unsigned)(std::holds_alternative<Protocol::Motion>(wc) ? 1
+                            : std::holds_alternative<Protocol::MotionAttack>(wc) ? 2
+                            : 3));
     }
 }
 
 void Game::update(float dt)
 {
-    if (IsKeyPressed(KEY_TAB) || IsKeyPressed(KEY_LEFT_SHIFT) ||
-        IsKeyPressed(KEY_RIGHT_SHIFT))
-        m_walkMode = !m_walkMode;
+    m_timeMs += (uint64_t)(dt * 1000.0f);
+    m_encodeCtx.timeMs = (uint32_t)m_timeMs;
 
-    handleInput();
+    // World snapshot for the producer's tap-to-target classification.
+    m_gameWorld.setPlayer(m_sim.tilePosition());
 
+    // Producer: touch + keys → PlayerInputFrame.
+    m_frame = m_hud.update(m_app.input().touchFrame(),
+                           m_app.input().keyState(),
+                           m_gameWorld,
+                           [this](float sx, float sy) {
+                               return screenToTile(sx, sy);
+                           },
+                           dt);
+
+    // Route the frame: manual move, nav engage, protocol emits.
+    routeFrame();
+
+    // Sim cadence first, then nav consumes a committed-step opportunity.
     float dtMs = dt * 1000.0f;
     m_sim.update(dtMs);
+
+    bool navDrove = false;
+    if (m_nav.isEngaged() && !m_manualActive && m_sim.beginStepOpportunity())
+    {
+        Simulation::NavExecutor::NavResult r =
+            m_nav.nextMove(m_gameWorld, m_sim.tilePosition());
+        if (r.move)
+        {
+            m_sim.handleInput(r.move->direction, r.move->locomotion);
+            navDrove = true;
+        }
+        else
+        {
+            m_sim.releaseInput();
+        }
+        if (r.action)
+            emitProtocol(r.action.value());
+    }
+
+    // Nothing drove this frame (manual idle, nav between steps): stand still.
+    if (!m_manualActive && !navDrove)
+        m_sim.releaseInput();
 
     auto pres = m_sim.presentation(TILE_SIZE);
 
@@ -212,6 +320,7 @@ void Game::render()
     else
         drawGrid();
     drawPlayer();
+    drawTargetMarkers();
 
     if (GRIDPLAY_GETENV("GRIDPLAY_PROBE_CAM_TEX") && m_mapLoaded)
     {
@@ -226,8 +335,8 @@ void Game::render()
 
     m_camera.restore();
 
+    m_hud.render();
     drawHud();
-    drawJoystick();
     Systems::UI::drawButton(m_btnBack,
                             { 0x33, 0x33, 0x55, 0xFF },
                             { 0x55, 0x55, 0x88, 0xFF },
@@ -279,6 +388,53 @@ void Game::drawGrid()
     }
 }
 
+void Game::drawTargetMarkers()
+{
+    // Demo entity markers (monster/item/NPC) as colored diamonds.
+    // The world adapter holds the same entity list; iterate deterministically.
+    for (uint32_t id = 10; id < 20; ++id)
+    {
+        Simulation::TargetInfo ent;
+        if (!m_gameWorld.tryGetTarget(id, ent)) break;
+        const Color col =
+            (ent.kind == Simulation::TargetKind::Monster) ? CLR_MONSTER
+            : (ent.kind == Simulation::TargetKind::Item)  ? CLR_ITEM
+                                                          : CLR_NPC;
+        const Vector2 c{ ent.position.x * TILE_SIZE + TILE_SIZE / 2,
+                         ent.position.y * TILE_SIZE + TILE_SIZE / 2 };
+        DrawCircleV(c, 6.0f, col);
+        DrawCircleLinesV(c, 9.0f, Fade(col, 0.5f));
+    }
+
+    // Nav target marker: engaged destination tile.
+    if (const auto* t = m_nav.target())
+    {
+        const Color col = (m_nav.status() == Simulation::GreedyNavigator::Status::Reached)
+                              ? CLR_NAV
+                              : CLR_SPAWN;
+        const Vector2 c{ t->destination.x * TILE_SIZE + TILE_SIZE / 2,
+                         t->destination.y * TILE_SIZE + TILE_SIZE / 2 };
+        DrawRectangleLinesEx(
+            Rectangle{ t->destination.x * TILE_SIZE + 2,
+                       t->destination.y * TILE_SIZE + 2,
+                       TILE_SIZE - 4, TILE_SIZE - 4 },
+            2.0f, col);
+        DrawCircleV(c, 5.0f, Fade(col, 0.7f));
+    }
+
+    // Active reticle (finger still down on the right band).
+    const HUD::MobileControlsHud::View& v = m_hud.view();
+    if (v.reticleActive)
+    {
+        const Simulation::GridCoord tile = m_hud.reticleTile();
+        const Color col = v.reticleValid ? CLR_RETICLE : CLR_RETICLE_B;
+        DrawRectangleLinesEx(
+            Rectangle{ tile.x * TILE_SIZE + 2, tile.y * TILE_SIZE + 2,
+                       TILE_SIZE - 4, TILE_SIZE - 4 },
+            2.0f, col);
+    }
+}
+
 void Game::drawPlayer()
 {
     auto pres = m_sim.presentation(TILE_SIZE);
@@ -298,36 +454,26 @@ void Game::drawHud()
     SetTextLineSpacing(16);
     Systems::Rendering::text("Helbreath Map", 16, 14, 22,
                              { 0xFC, 0xE9, 0xB0, 0xFF });
-    Systems::Rendering::text("WASD / arrows / drag joystick", 16, 44, 14,
-                             { 0x88, 0x99, 0xAA, 0xFF });
+    Systems::Rendering::text("Left band: joystick   Right band: target",
+                             16, 44, 14, { 0x88, 0x99, 0xAA, 0xFF });
 
     auto pres = m_sim.presentation(TILE_SIZE);
-    const char* mode = m_walkMode ? "WALK 560ms" : "RUN 312ms";
     const char* loco = (pres.locomotion == Simulation::Locomotion::Running)
                            ? "Running" : "Walking";
     if (!pres.isMoving) loco = "Standing";
+    const char* nav = "off";
+    if (m_nav.isEngaged())
+        nav = m_nav.isSuspended() ? "suspended" : "on";
 
     Systems::Rendering::text(
         TextFormat("tile  %d,%d    dir  %d    %s", (int)m_sim.tilePosition().x,
                    (int)m_sim.tilePosition().y, (int)pres.facing, loco),
         16, 64, 14, { 0x88, 0x99, 0xAA, 0xFF });
     Systems::Rendering::text(
-        TextFormat("mode  %s    (Shift/Tab toggles)", mode),
+        TextFormat("nav   %s    atk-target  %s", nav,
+                   m_hud.target().valid ? TextFormat("%u", m_hud.target().id)
+                                        : "none"),
         16, 84, 14, { 0x88, 0x99, 0xAA, 0xFF });
-}
-
-void Game::drawJoystick()
-{
-    if (!m_joystick.active())
-        return;
-
-    float r = 54.0f;
-    DrawCircleV(m_joystick.origin(), r,
-                Fade(CLR_WALK_HIL, 0.55f));
-    DrawCircleLinesV(m_joystick.origin(), r,
-                     Fade({ 0x8A, 0xA0, 0xC0, 0xFF }, 0.6f));
-    DrawCircleV(m_joystick.current(), 18.0f,
-                Fade({ 0x6A, 0xE0, 0x8A, 0xFF }, 0.7f));
 }
 
 } // namespace Screens

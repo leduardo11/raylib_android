@@ -1,10 +1,13 @@
 #pragma once
 
 #include "Core/Screen.h"
+#include "Game/Hud/MobileControlsHud.h"
+#include "Game/Input/PlayerInputFrame.h"
+#include "Game/Protocol/HelbreathPacketEncoder.h"
+#include "Game/Simulation/GridPlayWorld.h"
 #include "Game/Simulation/GridWorld.h"
+#include "Game/Simulation/NavExecutor.h"
 #include "Game/Simulation/PlayerMovementSimulation.h"
-#include "Game/Input/JoystickInput.h"
-#include "Game/Input/InputMapper.h"
 #include "Game/Presentation/Camera.h"
 #include "Game/Presentation/MapRenderer.h"
 #include "Game/Presentation/PlayerSprite.h"
@@ -28,21 +31,32 @@ private:
 
     Simulation::GridWorld    m_world;
     Simulation::PlayerMovementSimulation m_sim;
-    Input::JoystickInput     m_joystick;
-    Input::InputMapper       m_mapper;
-    Presentation::Camera     m_camera;
+    Simulation::GridPlayWorld m_gameWorld;
+    Simulation::NavExecutor   m_nav;
+    HUD::MobileControlsHud    m_hud;
+    Presentation::Camera      m_camera;
     Presentation::MapRenderer m_map;
     Presentation::PlayerSprite m_sprite;
 
-    bool m_walkMode = true;
+    Input::PlayerInputFrame m_frame;
+    Protocol::EncodeContext m_encodeCtx;
+    uint64_t m_timeMs = 0;
+
+    // Manual-joystick interruption of navigation: while a Move flows from the
+    // joystick/keys the nav is suspended (kept for resume on release).
+    bool m_manualActive = false;
+    bool m_prevManualActive = false;
+
     bool m_mapLoaded = false;
 
     void initWorld();
-    void handleInput();
+    void routeFrame();
+    void emitProtocol(const Input::PlayerCommand& cmd);
+    Simulation::GridCoord screenToTile(float sx, float sy) const;
     void drawGrid();
     void drawPlayer();
     void drawHud();
-    void drawJoystick();
+    void drawTargetMarkers();
 };
 
 } // namespace Screens

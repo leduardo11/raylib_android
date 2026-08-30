@@ -113,6 +113,7 @@ else()
         ${CMAKE_CURRENT_SOURCE_DIR}/Game/Content/TileMap.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Game/Content/TexturePack.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Game/Content/FileIO.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Game/Hud/MobileControlsHud.cpp
     )
     target_include_directories(gridplay_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

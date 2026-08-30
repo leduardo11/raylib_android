@@ -21,6 +21,21 @@ public:
     void handleInput(Direction dir, Locomotion loco);
     void releaseInput();
 
+    // Single-step drive seam for the NavExecutor: arm exactly one step in
+    // `dir`. The intent is consumed at commit and never auto-chains, so the
+    // caller (Game loop) re-arms per committed step:
+    //
+    //   while (nav engaged && sim.beginStepOpportunity())
+    //       -> nav.nextMove -> sim.beginSingleStep(dir, loco)
+    void beginSingleStep(Direction dir, Locomotion loco);
+
+    // True when a step may be armed: no step in progress and no motion intent
+    // already pending. The caller evaluates the navigator only then.
+    bool beginStepOpportunity() const
+    {
+        return !m_activeStep.active && !m_pendingIntent.active;
+    }
+
     GridCoord tilePosition() const { return m_tilePosition; }
     GridCoord destinationPosition() const;
     const ActiveStep& activeStep() const { return m_activeStep; }
@@ -52,6 +67,7 @@ private:
     GridCoord  m_tilePosition;
     ActiveStep m_activeStep;
     MoveIntent m_pendingIntent;
+    bool m_singleStepPending = false; // armed by beginSingleStep, not yet consumed
 };
 
 } // namespace Simulation

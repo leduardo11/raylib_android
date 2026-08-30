@@ -38,6 +38,22 @@ void PlayerMovementSimulation::update(float dtMs)
     {
         resolveNextIntent();
     }
+
+    // A single-step arm that never started this frame (e.g. blocked) is
+    // dropped so beginStepOpportunity re-arms from the navigator next frame.
+    if (m_singleStepPending && !m_activeStep.active)
+    {
+        m_pendingIntent.active = false;
+        m_singleStepPending = false;
+    }
+}
+
+void PlayerMovementSimulation::beginSingleStep(Direction dir, Locomotion loco)
+{
+    m_pendingIntent.direction  = dir;
+    m_pendingIntent.locomotion = loco;
+    m_pendingIntent.active     = true;
+    m_singleStepPending        = true;
 }
 
 void PlayerMovementSimulation::handleInput(Direction dir, Locomotion loco)
@@ -92,8 +108,18 @@ void PlayerMovementSimulation::resolveNextIntent()
     auto off = directionOffset(m_pendingIntent.direction);
     GridCoord dest = m_tilePosition + off;
 
-    if (m_world && m_world->canStepTo(dest))
-        commitStep(m_pendingIntent);
+    // Persistent (joystick) intents survive a commit and re-step every commit;
+    // single-step intents are consumed at their one commit.
+    if (m_world && !m_world->canStepTo(dest))
+        return;
+
+    if (m_singleStepPending)
+    {
+        m_pendingIntent.active = false;
+        m_singleStepPending = false;
+    }
+
+    commitStep(m_pendingIntent);
 }
 
 PlayerMovementSimulation::PresentationData

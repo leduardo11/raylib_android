@@ -29,9 +29,15 @@ raylib_android/
 │   │   └── Game          # GridPlay: P0a movement-feel screen
 │   ├── Game/             # Game-specific logic
 │   │   ├── Simulation/   # HelbreathDirection (N=1..NW=8), GridWorld, committed
-│   │   │                 #   steps, ActiveStep + latest intent, walk/run timing
-│   │   ├── Input/        # Floating joystick (dead zone -> 8-way), keyboard,
-│   │   │                 #   InputMapper -> MoveIntent
+│   │   │                 #   steps, walk/run timing, ITargetWorld / StubTargetWorld /
+│   │   │                 #   GridPlayWorld, TargetResolver, GreedyNavigator, NavExecutor
+│   │   ├── Input/        # PlayerCommand boundary (Move/SetTarget/Attack/Cast/
+│   │   │                 #   UseItem/Toggle), PlayerInputFrame, TouchFrame/KeyState,
+│   │   │                 #   floating joystick, InputMapper
+│   │   ├── Hud/          # MobileControlsHud — touch/key → PlayerInputFrame producer
+│   │   │                 #   (joystick, reticle, context ring, ☰ menu, RUN/SUPER/STANCE)
+│   │   ├── Protocol/     # ProtocolCommand, CommandTranslator, HelbreathPacketEncoder
+│   │   │                 #   (byte-stable wire bytes matching helbreath_lite)
 │   │   ├── Presentation/ # Read-only PlayerRenderer + Camera (interpolated state)
 │   │   ├── Entities      # Entity manager (create/destroy/query)
 │   │   ├── Components    # Transform, Render, Physics structs
@@ -42,7 +48,8 @@ raylib_android/
 │       ├── build.gradle
 │       └── src/main/AndroidManifest.xml
 ├── tests/
-│   └── gridplay_tests.cpp  # Desktop-only self-tests for P0a sim/input logic
+│   └── gridplay_tests.cpp  # Desktop-only self-tests (sim, nav, protocol, HUD) —
+│                           #   582 checks, 0 failures
 └── scripts/
     ├── build_apk.sh      # Build, sign, and verify APK
     ├── deploy_vps.sh     # Build (opt.) + push APK to the public VPS + verify
@@ -60,12 +67,19 @@ raylib_android/
 main.cpp
   └─ Core::Application
        ├─ Core::GameLoop  (frame timing)
-       ├─ Systems::Input  (input polling)
+       ├─ Systems::Input  (input polling: multitouch TouchFrame + KeyState)
        ├─ Systems::Audio  (sound/music)
        └─ Core::Screen*   (current screen)
             ├─ Screens::Splash   -> screens::MainMenu
             ├─ Screens::MainMenu -> Screens::Game | exit
             └─ Screens::Game     -> Screens::MainMenu
+
+Screens::Game (movement + HUD pipeline)
+  MobileControlsHud (touch/key) ─┐
+  (TouchFrame/KeyState)          ├─> PlayerInputFrame
+                                 └─> TargetResolver -> NavExecutor -> sim.handleInput
+                                      + CommandTranslator -> HelbreathPacketEncoder
+                                         -> wire bytes (emit + drop, no server yet)
 
 Systems::UI / Rendering / Audio / Input are stateless utility structs.
 Game::EntityManager + components provide optional ECS-like gameplay layer.
@@ -132,10 +146,16 @@ cmake -B artifacts/linux -S src && cmake --build artifacts/linux -j$(nproc)
 ./artifacts/linux/raylib_android
 ```
 
-### Desktop self-tests (P0a simulation/input)
+### Desktop self-tests (sim/nav/protocol/HUD)
 
 ```bash
-./artifacts/linux/gridplay_tests
+./artifacts/linux/gridplay_tests   # 582 checks, 0 failures
+```
+
+Desktop smoke test of the Game screen (multitouch HUD + camera):
+
+```bash
+GRIDPLAY_SCREEN=game GRIDPLAY_SHOT=/tmp/shot.png ./artifacts/linux/raylib_android
 ```
 
 ## Install

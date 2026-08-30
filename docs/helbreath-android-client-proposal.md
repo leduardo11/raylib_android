@@ -4,7 +4,14 @@
 **Repo:** `raylib_android` (this project)
 **Server target:** `repos/helbreath_lite` (HelBreath Heldenian)
 **Art source:** `repos/cs_rpg` (atlas@2 assets — presentation/pipeline donor only)
-**Status:** Proposal v3 (analysis + P0a/P0b/P0c scoping; revised per review: Helbreath-canonical direction, modern joystick quantization, no fixed movement queue, P0a vertical-slice-first) — no production code yet
+**Status:** Proposal v3 (analysis + P0a/P0b/P0c scoping; revised per review: Helbreath-canonical direction, modern joystick quantization, no fixed movement queue, P0a vertical-slice-first).
+
+**Implementation status (2026-08-30):** P0a (vertical slice) is **shipped**, and the
+full pre-networking input→wire pipeline is **built and unit-tested** (582 checks,
+0 failures). The `PlayerCommand` boundary, `ITargetWorld`/`TargetResolver`,
+`GreedyNavigator`/`NavExecutor`, `ProtocolCommand`/`CommandTranslator`,
+`HelbreathPacketEncoder`, and the **multitouch HUD** (step 7) are all implemented and
+wired into the Game screen. See §10 "Current status & next steps".
 
 ---
 
@@ -438,19 +445,21 @@ repos) + the direction mapping table, so the networking pass can cite them.
 
 ## 6. Phased roadmap toward the full client
 
-| Phase | Scope | Depends on |
-|-------|-------|-----------|
-| **P0a (this)** | Vertical slice: animated player, `HelbreathDirection`-canonical committed steps, walk/run, floating joystick, semantic animation, camera — offline, one simple map | — |
-| P0b | Rendering proof: verify atlas@2 parser + direction adapter; body + weapon compositor | P0a |
-| P0c | Navigation: tap-to-move + BFS + `PathQueue` | P0a |
-| 1 | Helbreath movement/wire prep: server-validated position model + `WireDirection` (no network yet; sim accepts move confirms/rejects) | P0a |
-| 2 | `.amd` map parsing → real walkable/grid data; camera scroll over large maps | P0a |
-| 3 | ENet transport (port `helbreath_lite` ENet client, 1 peer slot, 14 channels) | P1 |
-| 4 | Login / init-data handshake; render server-confirmed player position | P3 |
-| 5 | Networked movement: send `CommandMotion(Move/Run)`, apply `MoveConfirm`/`MoveReject` (bump on reject), broadcast `EventMotion` for nearby entities | P3, P4 |
-| 6 | Entity rendering for nearby players/NPCs from `PacketMapData`/`EventMotion` (reuse the Phase-0 renderer) | P5 |
-| 7 | Helbreath assets: PAK → texture extraction, then Helbreath sprites/paperdoll (replaces cs_rpg art) | P2 |
-| 8 | Combat/magic/chat/items over `CommandCommon`/`Notify` | P5 |
+| Phase | Scope | Depends on | Status |
+|-------|-------|-----------|--------|
+| **P0a** | Vertical slice: animated player, `HelbreathDirection`-canonical committed steps, walk/run, floating joystick, semantic animation, camera — offline, one simple map | — | ✅ shipped |
+| P0b | Rendering proof: verify atlas@2 parser + direction adapter; body + weapon compositor | P0a | ✅ atlas@2 parser + camera (compositor later) |
+| P0c | Navigation: tap-to-move + BFS + `PathQueue` | P0a | ✅ `GreedyNavigator`/`NavExecutor` (tap-to-move) |
+| 1 | Helbreath movement/wire prep: `PlayerCommand` boundary, `WireDirection`, `ITargetWorld`/`TargetResolver` | P0a | ✅ |
+| 2 | `ProtocolCommand` + `CommandTranslator` + `HelbreathPacketEncoder` (byte-stable vs hb_lite) | P0a | ✅ (item 5, 6) |
+| 2b | **Multitouch HUD** — touch → `PlayerInputFrame` producer, Game screen wiring | P0a | ✅ (item 7) |
+| 3 | ENet transport (port `helbreath_lite` ENet client, 1 peer slot, 14 channels) | — | ☐ next |
+| 4 | Login / init-data handshake; render server-confirmed player position | P3 | ☐ |
+| 5 | Networked movement: send `CommandMotion(Move/Run)`, apply `MoveConfirm`/`MoveReject` (bump on reject), broadcast `EventMotion` for nearby entities | P3, P4 | ☐ |
+| 6 | Entity rendering for nearby players/NPCs from `PacketMapData`/`EventMotion` (reuse the Phase-0 renderer) | P5 | ☐ |
+| 7 | Helbreath assets: PAK → texture extraction, then Helbreath sprites/paperdoll (replaces cs_rpg art) | — | ☐ |
+| 8 | Combat/magic/chat/items over `CommandCommon`/`Notify` | P5 | ☐ |
+| 9 | `.amd` map parsing → real walkable/grid data; camera scroll over large maps | — | ☐ |
 
 Each networking phase mirrors the wire structs in `src/shared/includes/Packet/*`
 and the server validation in `Game.cpp` — the protocol is the contract; `raylib_android`
@@ -527,3 +536,59 @@ rework — they send what the sim already produced.
 7. Keep `.amd` parsing out until later, or pull it earlier to use a real `helbreath_lite`
    map for feel? (Recommend: keep synthetic until we must match server walkability
    byte-for-byte.)
+
+---
+
+## 10. Current status & next steps (2026-08-30)
+
+### What is shipped and tested
+
+The offline vertical slice plus the full pre-network input→wire pipeline:
+
+- **P0a** — animated player, `HelbreathDirection`-canonical committed steps,
+  walk/run, floating joystick, camera, fallback grid + real map loading.
+- **Command boundary** — `PlayerCommand` (six closed variants), `PlayerInputFrame`,
+  `InputMapper`/joystick, `TouchFrame`/`KeyState`.
+- **World observation** — `ITargetWorld` + `StubTargetWorld` + `GridPlayWorld`
+  (app adapter), `TargetResolver`.
+- **Navigation** — `GreedyNavigator` + `NavExecutor` driven by the sim's
+  committed-step cadence (`beginSingleStep`/`beginStepOpportunity`).
+- **Protocol** — `ProtocolCommand`, `CommandTranslator`, `HelbreathPacketEncoder`
+  (byte-for-byte vs `helbreath_lite` real packed structs: Motion 21B, MotionAttack
+  23B, Common 27B).
+- **Item 7 (this session)** — multitouch HUD: left-band floating joystick,
+  right-band target reticle (fires on release), NPC context ring, ☰ window menu,
+  momentary RUN / separate SUPER, stance toggle, HP/MP hold-repeat, magic slots,
+  keyboard parity. Wired into the Game screen; HUD commands route through
+  `TargetResolver → NavExecutor → sim` and `CommandTranslator → Encoder` (emit
+  + drop, no server yet).
+- **Tests** — `tests/gridplay_tests.cpp`: **582 checks, 0 failures** (includes HUD
+  producer, resolver, navigator, translator, encoder golden bytes, sim cadence).
+
+Build: `cmake -B artifacts/linux -S src && cmake --build artifacts/linux -j8 --target gridplay_tests && ./artifacts/linux/gridplay_tests`; app target `raylib_android`.
+
+### Next steps (next session)
+
+1. **Phone test the HUD** (needs user): install the APK (build + deploy below), run,
+   tap the demo monster (spawn+8,0) to walk-and-attack, tap ground to move, use the
+   joystick, SUPER, potions, ☰ menu. Report feel/gesture bugs. The `GRIDPLAY_SHOT`
+   env var dumps one frame for off-device review.
+2. **Nav tail polish**: `Reached`/`Blocked`/`Stuck` surfacing on the reticle
+   (green/red/gray) per the proposal; verify nav resume after manual-input
+   suspension.
+3. **Real entities instead of the demo list**: hook `GridPlayWorld` to a map-data
+   entity source (`PacketMapData` snapshot semantics) so targeting matches real
+   content.
+4. **ENet transport (roadmap phase 3)**: port `helbreath_lite`'s ENet client
+   (1 peer slot, 14 channels); the encoder output is already the exact wire bytes.
+5. **Login / init-data handshake (phase 4)**: then networked movement with
+   `MoveConfirm`/`MoveReject` and bump-on-reject.
+6. Then phases 5–9 per the roadmap table (entity rendering, Helbreath assets,
+   combat/magic/items, `.amd` maps).
+
+### Repo rules (unchanged)
+
+- Commit only when asked; keep uncommitted on `develop`.
+- Phone testing via the user + `GRIDPLAY_SHOT` (no adb device).
+- Desktop build: `cmake -B artifacts/linux -S src && cmake --build artifacts/linux -j8`.
+- VPS deploy: `./scripts/deploy_vps.sh` (builds Debug + atomically swaps + verifies).
