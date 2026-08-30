@@ -5,8 +5,18 @@
 #include "Systems/Rendering.h"
 #include "Game/Presentation/PlayerPresentationState.h"
 #include "raylib.h"
+#include "rlgl.h"
+
+#include <cstdlib>
 
 namespace Screens {
+
+#if defined(__ANDROID__)
+    #define GRIDPLAY_GETENV(name) ((const char*)nullptr)
+#else
+    #include <cstdlib>
+    #define GRIDPLAY_GETENV(name) std::getenv(name)
+#endif
 
 namespace {
 
@@ -165,12 +175,48 @@ void Game::render()
 {
     Systems::Rendering::clear(CLR_BG);
 
+    if (GRIDPLAY_GETENV("GRIDPLAY_PROBE_NOCAM"))
+    {
+        DrawRectangle(0, 0, (int)LOGICAL_W, (int)LOGICAL_H, MAGENTA);
+        if (m_mapLoaded && !m_map.textures().textures.empty())
+        {
+            const Texture2D& tex = m_map.textures().textures[0];
+            DrawTextureRec(tex, Rectangle{ 0, 0, 600, 600 },
+                           Vector2{ 340, 60 }, WHITE);
+        }
+        rlDrawRenderBatchActive();
+        static int dbgFrame2 = 0;
+        const char* dbgShot2 = GRIDPLAY_GETENV("GRIDPLAY_SHOT");
+        if (dbgShot2 && dbgShot2[0] && dbgFrame2 < 150)
+        {
+            ++dbgFrame2;
+            if (dbgFrame2 == 75)
+                TakeScreenshot(dbgShot2);
+        }
+        return;
+    }
+
+    if (GRIDPLAY_GETENV("GRIDPLAY_PROBE_RED"))
+        DrawRectangle(0, 0, (int)LOGICAL_W, (int)LOGICAL_H, RED);
+
     m_camera.apply();
     if (m_mapLoaded)
         m_map.draw(m_camera);
     else
         drawGrid();
     drawPlayer();
+
+    if (GRIDPLAY_GETENV("GRIDPLAY_PROBE_CAM_TEX") && m_mapLoaded)
+    {
+        DrawRectangle(2630, 2600, 600, 600, MAGENTA);
+        if (!m_map.textures().textures.empty())
+        {
+            const Texture2D& tex = m_map.textures().textures[0];
+            Rectangle src{ 0, 0, (float)tex.width, (float)tex.height };
+            DrawTextureRec(tex, src, Vector2{ 2096, 2376 }, WHITE);
+        }
+    }
+
     m_camera.restore();
 
     drawHud();
@@ -179,6 +225,19 @@ void Game::render()
                             { 0x33, 0x33, 0x55, 0xFF },
                             { 0x55, 0x55, 0x88, 0xFF },
                             { 0x88, 0xAA, 0xFF, 0xFF });
+
+    // Debug aid: GRIDPLAY_SHOT=/path/shot.png dumps one frame (env only).
+    static int dbgFrame = 0;
+    const char* dbgShot = GRIDPLAY_GETENV("GRIDPLAY_SHOT");
+    if (dbgShot && dbgShot[0] && dbgFrame < 150)
+    {
+        ++dbgFrame;
+        if (dbgFrame == 75)
+        {
+            rlDrawRenderBatchActive();
+            TakeScreenshot(dbgShot);
+        }
+    }
 }
 
 void Game::drawGrid()

@@ -108,17 +108,17 @@ PlayerMovementSimulation::presentation(float tileSize) const
     if (m_activeStep.active)
     {
         float t = smoothStep(m_activeStep.progress());
-        float fromX = m_activeStep.origin.x * tileSize;
-        float fromY = m_activeStep.origin.y * tileSize;
-        float toX   = m_activeStep.destination.x * tileSize;
-        float toY   = m_activeStep.destination.y * tileSize;
+        float fromX = (m_activeStep.origin.x + 0.5f) * tileSize;
+        float fromY = (m_activeStep.origin.y + 0.5f) * tileSize;
+        float toX   = (m_activeStep.destination.x + 0.5f) * tileSize;
+        float toY   = (m_activeStep.destination.y + 0.5f) * tileSize;
         d.pixelX = fromX + (toX - fromX) * t;
         d.pixelY = fromY + (toY - fromY) * t;
     }
     else
     {
-        d.pixelX = m_tilePosition.x * tileSize;
-        d.pixelY = m_tilePosition.y * tileSize;
+        d.pixelX = (m_tilePosition.x + 0.5f) * tileSize;
+        d.pixelY = (m_tilePosition.y + 0.5f) * tileSize;
     }
 
     return d;

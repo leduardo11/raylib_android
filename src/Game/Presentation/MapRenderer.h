@@ -19,6 +19,7 @@ public:
 
     const Content::TileMapData& data() const { return m_data; }
     bool loaded() const { return m_loaded; }
+    const Content::TexturePack& textures() const { return m_textures; }
 
     // Blits the visible ground tiles for the given camera.
     void draw(const Camera& cam) const;
