@@ -1,5 +1,6 @@
 # ── Build output (everything goes to artifacts/) ───────────────────────────
 artifacts/
+build/
 *.o
 *.obj
 *.so

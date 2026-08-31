@@ -1574,6 +1574,18 @@ void run()
         CHECK_EQ(f.count(), 0u);
     }
 
+    // ── untargeted ATK press → PlayerAttack{ targetId = 0 } ─────────────
+    {
+        MobileControlsHud freshHud;
+        CHECK(!freshHud.target().valid);
+        Input::PlayerInputFrame fAtk = freshHud.update(tap.press(1134.0f, 568.0f),
+                                                      KeyState{}, world, stt, 0.016f);
+        CHECK(freshHud.view().attackEnabled);
+        const PlayerAttack* atk = hudFind<PlayerAttack>(fAtk);
+        CHECK(atk && atk->targetId == 0u && !atk->super);
+        freshHud.update(tap.release(1134.0f, 568.0f), KeyState{}, world, stt, 0.016f);
+    }
+
     // ── item tap → SetTarget{Pickup} ────────────────────────────────────
     {
         Input::PlayerInputFrame f = hud.update(tap.press(968.0f, 168.0f),
@@ -1667,10 +1679,11 @@ void run()
     }
 
     // ── a touch on a button is never a gesture (Rule 1) ─────────────────
+    // ── a touch on a button is never a gesture (Rule 1) ─────────────────
     {
-        Input::PlayerInputFrame fPress = hud.update(tap.press(951.0f, 676.0f),
+        Input::PlayerInputFrame fPress = hud.update(tap.press(860.0f, 640.0f),
                                                     KeyState{}, world, stt, 0.016f);
-        Input::PlayerInputFrame fRel = hud.update(tap.release(951.0f, 676.0f),
+        Input::PlayerInputFrame fRel = hud.update(tap.release(860.0f, 640.0f),
                                                   KeyState{}, world, stt, 0.016f);
         const PlayerUseItem* u = hudFind<PlayerUseItem>(fPress);
         CHECK(u && u->slot == UseItemSlot::Hp);
@@ -1687,7 +1700,7 @@ void run()
         f = hud.update(tap.release(904.0f, 168.0f), KeyState{}, world, stt,
                        0.016f);
 
-        const Builder::P super{ 1, 1184.0f, 476.0f, true, true, false };
+        const Builder::P super{ 1, 1130.0f, 500.0f, true, true, false };
         const Builder::P atk{ 2, 1134.0f, 568.0f, true, true, false };
         f = hud.update(tap.multi(super, atk), KeyState{}, world, stt, 0.016f);
         const PlayerAttack* a = hudFind<PlayerAttack>(f);
@@ -1695,48 +1708,44 @@ void run()
         CHECK(hud.view().superHeld);
     }
 
-    // ── momentary RUN: while held, joystick moves run; release → walk ───
+    // ── RUN button tap: toggles run persistent mode ON/OFF ─────────────
     {
-        // Frame 1: joystick press + run press → run edge on.
-        Input::PlayerInputFrame fPress = hud.update(
-            tap.multi(tap.press(300.0f, 300.0f, 0),
-                      Builder::P{ 1, 1072.0f, 476.0f, true, true, false }),
-            KeyState{}, world, stt, 0.016f);
-        const PlayerToggle* togg = hudFind<PlayerToggle>(fPress);
+        // Tap RUN button -> toggle persistent run ON
+        Input::PlayerInputFrame fOn = hud.update(tap.press(1020.0f, 500.0f),
+                                                 KeyState{}, world, stt, 0.016f);
+        hud.update(tap.release(1020.0f, 500.0f), KeyState{}, world, stt, 0.016f);
+        const PlayerToggle* togg = hudFind<PlayerToggle>(fOn);
         CHECK(togg && togg->kind == ToggleKind::Run && togg->on);
+        CHECK(hud.view().runHeld);
 
-        // Frame 2: hold joystick drag + hold run → Move Running.
-        Input::PlayerInputFrame fHold = hud.update(
-            tap.multi(Builder::P{ 0, 400.0f, 300.0f, false, true, false },
-                      Builder::P{ 1, 1072.0f, 476.0f, false, true, false }),
-            KeyState{}, world, stt, 0.016f);
-        const PlayerMove* mv = hudFind<PlayerMove>(fHold);
-        CHECK(mv && mv->direction == Simulation::Direction::E);
-        CHECK(mv->locomotion == Simulation::Locomotion::Running);
+        // Movement with joystick while RUN ON -> Running
+        hud.update(tap.press(300.0f, 300.0f), KeyState{}, world, stt, 0.016f);
+        Input::PlayerInputFrame fJoy = hud.update(tap.hold(400.0f, 300.0f),
+                                                  KeyState{}, world, stt, 0.016f);
+        const PlayerMove* mv = hudFind<PlayerMove>(fJoy);
+        CHECK(mv && mv->locomotion == Simulation::Locomotion::Running);
+        hud.update(tap.release(400.0f, 300.0f), KeyState{}, world, stt, 0.016f);
 
-        // Frame 3: release run while joystick still held → run edge off,
-        // movement returns to walk.
-        Input::PlayerInputFrame fRel = hud.update(
-            tap.multi(Builder::P{ 0, 400.0f, 300.0f, false, true, false },
-                      Builder::P{ 1, 1072.0f, 476.0f, false, false, true }),
-            KeyState{}, world, stt, 0.016f);
-        togg = hudFind<PlayerToggle>(fRel);
+        // Tap RUN button again -> toggle persistent run OFF
+        Input::PlayerInputFrame fOff = hud.update(tap.press(1020.0f, 500.0f),
+                                                  KeyState{}, world, stt, 0.016f);
+        hud.update(tap.release(1020.0f, 500.0f), KeyState{}, world, stt, 0.016f);
+        togg = hudFind<PlayerToggle>(fOff);
         CHECK(togg && togg->kind == ToggleKind::Run && !togg->on);
-        mv = hudFind<PlayerMove>(fRel);
-        CHECK(mv && mv->locomotion == Simulation::Locomotion::Walking);
+        CHECK(!hud.view().runHeld);
     }
 
     // ── stance toggle via button ────────────────────────────────────────
     {
-        Input::PlayerInputFrame fOn = hud.update(tap.press(1248.0f, 468.0f),
+        Input::PlayerInputFrame fOn = hud.update(tap.press(1240.0f, 560.0f),
                                                  KeyState{}, world, stt, 0.016f);
-        hud.update(tap.release(1248.0f, 468.0f), KeyState{}, world, stt, 0.016f);
+        hud.update(tap.release(1240.0f, 560.0f), KeyState{}, world, stt, 0.016f);
         const PlayerToggle* t = hudFind<PlayerToggle>(fOn);
         CHECK(t && t->kind == ToggleKind::Stance && t->on);
         CHECK(hud.view().stanceOn);
-        Input::PlayerInputFrame fOff = hud.update(tap.press(1248.0f, 468.0f),
+        Input::PlayerInputFrame fOff = hud.update(tap.press(1240.0f, 560.0f),
                                                   KeyState{}, world, stt, 0.016f);
-        hud.update(tap.release(1248.0f, 468.0f), KeyState{}, world, stt, 0.016f);
+        hud.update(tap.release(1240.0f, 560.0f), KeyState{}, world, stt, 0.016f);
         t = hudFind<PlayerToggle>(fOff);
         CHECK(t && t->kind == ToggleKind::Stance && !t->on);
         CHECK(!hud.view().stanceOn);
@@ -1848,9 +1857,9 @@ void run()
     // ── potion button repeat cadence ────────────────────────────────────
     {
         MobileControlsHud h;
-        Input::PlayerInputFrame f = h.update(tap.press(951.0f, 676.0f),
+        Input::PlayerInputFrame f = h.update(tap.press(860.0f, 640.0f),
                                              KeyState{}, world, stt, 0.016f);
-        f = h.update(tap.hold(951.0f, 676.0f), KeyState{}, world, stt, 0.6f);
+        f = h.update(tap.hold(860.0f, 640.0f), KeyState{}, world, stt, 0.6f);
         int hp = 0;
         for (auto it = f.begin(); it != f.end(); ++it)
             if (const PlayerUseItem* u = std::get_if<PlayerUseItem>(it))

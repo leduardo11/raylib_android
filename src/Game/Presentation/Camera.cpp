@@ -51,7 +51,7 @@ void Camera::clampOrigin()
 
 void Camera::apply()
 {
-    BeginMode2D((Camera2D){
+    BeginMode2D(Camera2D{
         Vector2{ 0, 0 },
         m_origin,
         0.0f,

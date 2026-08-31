@@ -93,8 +93,7 @@ void MobileControlsHud::pushSetTarget(Input::PlayerInputFrame& frame,
 
 void MobileControlsHud::emitAttack(Input::PlayerInputFrame& frame)
 {
-    if (m_target.valid)
-        frame.push(Input::PlayerAttack{ m_target.id, m_superHeld });
+    frame.push(Input::PlayerAttack{ m_target.valid ? m_target.id : 0, m_superHeld });
 }
 
 Input::PlayerInputFrame MobileControlsHud::update(
@@ -220,7 +219,12 @@ Input::PlayerInputFrame MobileControlsHud::update(
                 continue;
             }
             if (contains(L.run, t.x, t.y))
-                continue; // momentary: the runDown edge below emits on/off
+            {
+                m_runPersistent = !m_runPersistent;
+                frame.push(Input::PlayerToggle{
+                    Input::ToggleKind::Run, m_runPersistent, 0 });
+                continue;
+            }
             if (contains(L.super, t.x, t.y))
                 continue; // momentary modifier: held state only
 
@@ -322,27 +326,24 @@ Input::PlayerInputFrame MobileControlsHud::update(
     m_superHeld = runtimeDown;
 
     // ── attack button: immediate on press, then repeat at the gate ──────
-    if (m_target.valid)
+    if (m_atkPressPending)
     {
-        if (m_atkPressPending)
+        emitAttack(frame);
+        m_atkAccum = 0.0f;
+        m_atkPressPending = false;
+    }
+    if (atkDown)
+    {
+        m_atkAccum += dtSec;
+        while (m_atkAccum >= ATTACK_REPEAT_S)
         {
+            m_atkAccum -= ATTACK_REPEAT_S;
             emitAttack(frame);
-            m_atkAccum = 0.0f;
-            m_atkPressPending = false;
         }
-        if (atkDown)
-        {
-            m_atkAccum += dtSec;
-            while (m_atkAccum >= ATTACK_REPEAT_S)
-            {
-                m_atkAccum -= ATTACK_REPEAT_S;
-                emitAttack(frame);
-            }
-        }
-        else
-        {
-            m_atkAccum = 0.0f;
-        }
+    }
+    else
+    {
+        m_atkAccum = 0.0f;
     }
 
     // ── potions: touch buttons + keyboard Insert/Delete hold-repeat ─────
@@ -464,7 +465,7 @@ Input::PlayerInputFrame MobileControlsHud::update(
     m_view.runHeld = m_runHeld || m_runPersistent;
     m_view.superHeld = m_superHeld;
     m_view.stanceOn = m_stanceOn;
-    m_view.attackEnabled = m_target.valid;
+    m_view.attackEnabled = true;
     m_view.attackPressed = atkDown || m_atkPressPending;
 
     return frame;

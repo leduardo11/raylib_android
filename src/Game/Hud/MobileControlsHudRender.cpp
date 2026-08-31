@@ -71,7 +71,10 @@ void MobileControlsHud::render() const
                    { 0x44, 0x66, 0x88, 0xFF }, false);
 
     // Action cluster: RUN / SUPER momentary + STANCE toggle + ATK.
-    drawButtonRect(L.run, "RUN", { 0x2C, 0x38, 0x24, 0xFF },
+    const char* runLabel = v.runHeld ? "RUN ON" : "RUN OFF";
+    drawButtonRect(L.run, runLabel,
+                   v.runHeld ? Color{ 0x2E, 0x7D, 0x32, 0xFF }
+                             : Color{ 0x2C, 0x38, 0x24, 0xFF },
                    v.runHeld ? Color{ 0x8A, 0xE0, 0x8A, 0xFF }
                              : Color{ 0x55, 0x77, 0x55, 0xFF },
                    v.runHeld);

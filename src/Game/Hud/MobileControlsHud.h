@@ -57,17 +57,16 @@ inline bool contains(const Rect& r, float px, float py)
 
 // The approved layout, in logical coordinates (§3).
 struct HudLayout {
-    Rect menu     { 1176.0f, 12.0f, 88.0f, 44.0f };
-    Rect attack   { 1088.0f, 500.0f, 192.0f, 180.0f };
-    Rect strong   { 1024.0f, 448.0f, 96.0f, 28.0f };  // run/super row anchor
-    Rect run      { 988.0f, 448.0f, 88.0f, 48.0f };
-    Rect super    { 1088.0f, 448.0f, 120.0f, 48.0f };
-    Rect stance   { 1216.0f, 448.0f, 64.0f, 40.0f };
-    Rect hpBtn    { 896.0f, 648.0f, 86.0f, 56.0f };
-    Rect mpBtn    { 986.0f, 648.0f, 86.0f, 56.0f };
-    Rect magic1   { 896.0f, 584.0f, 56.0f, 56.0f };
-    Rect magic2   { 956.0f, 584.0f, 56.0f, 56.0f };
-    Rect magic3   { 1016.0f, 584.0f, 56.0f, 56.0f };
+    Rect menu     { 1172.0f, 12.0f, 96.0f, 44.0f };
+    Rect run      { 980.0f, 480.0f, 96.0f, 52.0f };
+    Rect super    { 1090.0f, 480.0f, 96.0f, 52.0f };
+    Rect attack   { 1090.0f, 544.0f, 124.0f, 124.0f };
+    Rect stance   { 1222.0f, 544.0f, 46.0f, 46.0f };
+    Rect hpBtn    { 836.0f, 620.0f, 68.0f, 52.0f };
+    Rect mpBtn    { 908.0f, 620.0f, 68.0f, 52.0f };
+    Rect magic1   { 980.0f, 620.0f, 52.0f, 52.0f };
+    Rect magic2   { 1036.0f, 620.0f, 52.0f, 52.0f };
+    Rect magic3   { 1096.0f, 620.0f, 52.0f, 52.0f };
     // ☰ menu fan-out (2 rows x 3 windows), anchored under the menu button.
     Rect window0  { 1030.0f, 64.0f, 140.0f, 38.0f };
     Rect window1  { 1030.0f, 106.0f, 140.0f, 38.0f };
