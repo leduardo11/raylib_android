@@ -4,6 +4,7 @@
 # Usage: python3 scripts/serve_apk.py [--port PORT]
 
 import http.server
+import json
 import os
 import sys
 import time
@@ -117,18 +118,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-type", "text/html")
             self.end_headers()
 
-            apk = (
-                next(
-                    (
-                        f
-                        for f in os.listdir(APK_DIR)
-                        if f.endswith(".apk")
-                    ),
-                    "raylib_android-debug.apk",
-                )
-                if APK_DIR
-                else "raylib_android-debug.apk"
-            )
+            # Prefer the "latest" symlink if present, else first .apk
+            def _find_latest():
+                if not APK_DIR:
+                    return None
+                for f in sorted(os.listdir(APK_DIR)):
+                    if f.endswith("-latest.apk"):
+                        return f
+                for f in sorted(os.listdir(APK_DIR)):
+                    if f.endswith(".apk") and not f.startswith("."):
+                        return f
+                return None
+
+            apk = _find_latest() or "raylib_android-debug.apk"
 
             apk_path = os.path.join(APK_DIR, apk) if APK_DIR else ""
 
@@ -142,6 +144,44 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "Host",
                 f"{get_primary_ip()}:{PORT}",
             )
+
+            # Read build info from version.json if present
+            version_info = {}
+            for candidate in ("raylib_android-debug-latest-version.json",
+                              "raylib_android-debug-version.json",
+                              "raylib_android-release-latest-version.json",
+                              "raylib_android-release-version.json"):
+                vpath = os.path.join(APK_DIR, candidate) if APK_DIR else ""
+                if vpath and os.path.exists(vpath):
+                    try:
+                        with open(vpath) as f:
+                            version_info = json.load(f)
+                        break
+                    except Exception:
+                        version_info = {}
+                        break
+
+            # Build info section
+            if version_info:
+                rows = []
+                vmap = (
+                    ("Version", version_info.get("versionName", "")),
+                    ("Build Code", str(version_info.get("versionCode", ""))),
+                    ("Git Commit", version_info.get("gitCommit", "")),
+                    ("Build Type", version_info.get("buildType", "")),
+                    ("Build Date", version_info.get("buildDate", "")),
+                    ("APK Size", "%.1f MB" % (version_info.get("sizeBytes", 0) / 1048576)),
+                    ("APK File", version_info.get("apkName", "")),
+                )
+                for k, v in vmap:
+                    rows.append(f"<tr><td>{k}</td><td>{v}</td></tr>")
+                h2 = "<h2>Build Info</h2>"
+                version_block = (
+                    '<div class="box"><table>' + "".join(rows) + "</table></div>"
+                )
+            else:
+                h2 = ""
+                version_block = ""
 
             self.wfile.write(
                 f"""<!DOCTYPE html>
@@ -159,6 +199,10 @@ h2{{color:#fa4;margin-top:2em}}
 code{{background:#333;padding:.2em .4em;border-radius:3px}}
 pre{{background:#000;padding:1em;border-radius:4px;overflow-x:auto;color:#aaa;white-space:pre-wrap}}
 .box{{background:#1a1a2e;border:1px solid #333;border-radius:6px;padding:1em;margin:1em 0}}
+table{{width:100%;border-collapse:collapse;margin:1em 0}}
+td{{padding:.4em .8em;border-bottom:1px solid #333}}
+td:first-child{{color:#888;width:40%}}
+td:last-child{{color:#eee}}
 </style>
 </head>
 <body>
@@ -169,10 +213,14 @@ pre{{background:#000;padding:1em;border-radius:4px;overflow-x:auto;color:#aaa;wh
 {datetime.now().strftime('%Y-%m-%d %H:%M')}
 &middot;
 {size / 1024 / 1024:.0f}MB
+{"&middot; v" + version_info.get('versionName', '') if version_info else ""}
 </div>
 
 <a href="{apk}">[Download] APK</a>
 <a href="/crashes/">[View] Crash Logs</a>
+
+{h2 if version_info else ""}
+{version_block if version_info else ""}
 
 <h2>After a Crash</h2>
 

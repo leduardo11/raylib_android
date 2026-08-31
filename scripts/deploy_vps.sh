@@ -36,9 +36,19 @@ for arg in "$@"; do
     esac
 done
 
-APK_NAME="raylib_android-${BUILD_TYPE,,}.apk"
+# Extract version from build.gradle
+VERSION_NAME=$(grep -E "versionName\s+" "$PROJECT_DIR/src/app/build.gradle" | head -1 | sed -E "s/.*versionName\s+['\"]([^'\"]+)['\"].*/\1/")
+VERSION_CODE=$(grep -E "versionCode\s+" "$PROJECT_DIR/src/app/build.gradle" | head -1 | sed -E "s/.*versionCode\s+([0-9]+).*/\1/")
+GIT_COMMIT=$(git -C "$PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+APK_BASE_NAME="raylib_android-${BUILD_TYPE,,}"
+APK_VERSIONED_NAME="${APK_BASE_NAME}-v${VERSION_NAME}-${GIT_COMMIT}.apk"
+APK_NAME="${APK_VERSIONED_NAME}"
 PUBLIC_URL="http://$VPS_HOST:$VPS_PORT/$APK_NAME"
 APK=""
+
+# Also deploy a version.json for the server to consume
+VERSION_JSON_NAME="${APK_BASE_NAME}-version.json"
 
 echo "==> Deploying to $VPS_HOST:$VPS_PORT  (${BUILD_TYPE})"
 
@@ -46,12 +56,20 @@ if [ "$SKIP_BUILD" = "0" ]; then
     "$SCRIPT_DIR/build_apk.sh" "$BUILD_TYPE" 2>&1 | tail -8
 fi
 
-# Locate the APK the same way build_apk.sh does.
-APK=$(find "$PROJECT_DIR/artifacts" -name "$APK_NAME" 2>/dev/null | head -1)
-if [ -z "$APK" ]; then
-    echo "Could not find $APK_NAME under $PROJECT_DIR/artifacts" >&2
+# Locate the APK the same way build_apk.sh does (original name).
+BUILT_APK=$(find "$PROJECT_DIR/artifacts" -name "raylib_android-${BUILD_TYPE,,}.apk" 2>/dev/null | head -1)
+if [ -z "$BUILT_APK" ]; then
+    BUILT_APK="$PROJECT_DIR/src/app/build/outputs/apk/${BUILD_TYPE,,}/app-${BUILD_TYPE,,}.apk"
+fi
+if [ ! -f "$BUILT_APK" ]; then
+    echo "Could not find built APK under $PROJECT_DIR/artifacts or $PROJECT_DIR/src/app/build/outputs" >&2
     exit 1
 fi
+
+# Copy to versioned name for upload
+APK="$PROJECT_DIR/artifacts/outputs/apk/${BUILD_TYPE,,}/$APK_VERSIONED_NAME"
+mkdir -p "$(dirname "$APK")"
+cp "$BUILT_APK" "$APK"
 
 LOCAL_SIZE=$(stat -c %s "$APK")
 echo "    APK:       $APK ($LOCAL_SIZE bytes)"
@@ -71,13 +89,50 @@ else
     run_ssh() { ssh "${SSH_OPTS[@]}" "$@"; }
 fi
 
+# ── Create version.json ───────────────────────────────────────────────────
+VERSION_JSON=$(mktemp)
+cat > "$VERSION_JSON" <<EOF
+{
+  "versionName": "$VERSION_NAME",
+  "versionCode": $VERSION_CODE,
+  "gitCommit": "$GIT_COMMIT",
+  "buildType": "$BUILD_TYPE",
+  "apkName": "$APK_VERSIONED_NAME",
+  "buildDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "sizeBytes": $LOCAL_SIZE
+}
+EOF
+
 # ── Upload + atomic rename ────────────────────────────────────────────────
 TMP_REMOTE="$VPS_REMOTE_DIR/$APK_NAME.tmp"
 run_scp "$APK" "$VPS_USER@$VPS_HOST:$TMP_REMOTE"
 run_ssh "$VPS_USER@$VPS_HOST" \
     "mkdir -p '$VPS_REMOTE_DIR' && mv -f '$TMP_REMOTE' '$VPS_REMOTE_DIR/$APK_NAME'"
 
+# Upload version.json
+TMP_JSON="$VPS_REMOTE_DIR/$VERSION_JSON_NAME.tmp"
+run_scp "$VERSION_JSON" "$VPS_USER@$VPS_HOST:$TMP_JSON"
+run_ssh "$VPS_USER@$VPS_HOST" \
+    "mv -f '$TMP_JSON' '$VPS_REMOTE_DIR/$VERSION_JSON_NAME'"
+
+# Create/update stable "latest" symlink on VPS
+run_ssh "$VPS_USER@$VPS_HOST" \
+    "cd '$VPS_REMOTE_DIR' && ln -sf '$APK_VERSIONED_NAME' '${APK_BASE_NAME}-latest.apk' && ln -sf '$VERSION_JSON_NAME' '${APK_BASE_NAME}-latest-version.json'"
+
+# Upload the updated server script + restart it. The server is started as a
+# fully-detached process. Kill and start must be SEPARATE SSH calls: a single
+# combined command makes `pkill -f 'serve_apk.py --port'` match the restart's
+# own shell command line (which contains that literal string) and kill itself
+# before the new server can start.
+run_scp "$SCRIPT_DIR/serve_apk.py" "$VPS_USER@$VPS_HOST:/opt/apkserve/scripts/serve_apk.py"
+run_ssh "$VPS_USER@$VPS_HOST" "pkill -9 -f '[s]erve_apk.py --port' 2>/dev/null; sleep 1"
+run_ssh "$VPS_USER@$VPS_HOST" \
+    "cd /opt/apkserve && (setsid python3 scripts/serve_apk.py --port $VPS_PORT </dev/null >server.log 2>&1 &) ; sleep 2"
+
+rm -f "$VERSION_JSON"
+
 echo "    Uploaded + swapped atomically."
+echo "    Version: $VERSION_NAME (code $VERSION_CODE, commit $GIT_COMMIT)"
 
 # ── Verify the public link serves exactly our bytes ───────────────────────
 SERVED=$(curl -sI "$PUBLIC_URL" | grep -i '^Content-Length:' | tr -d '\r' \
@@ -89,6 +144,16 @@ else
     exit 1
 fi
 
+# Verify version.json
+VERSION_JSON_URL="http://$VPS_HOST:$VPS_PORT/$VERSION_JSON_NAME"
+SERVED_JSON=$(curl -sI "$VERSION_JSON_URL" | grep -i '^Content-Length:' | tr -d '\r' \
+              | awk '{print $2}')
+if [ -n "$SERVED_JSON" ]; then
+    echo "    Version JSON: $VERSION_JSON_URL"
+fi
+
 echo "==> Deploy complete."
 echo "    Install: adb install \"$APK\""
 echo "    Download: $PUBLIC_URL"
+echo "    Latest (stable): http://$VPS_HOST:$VPS_PORT/${APK_BASE_NAME}-latest.apk"
+echo "    Version info:    http://$VPS_HOST:$VPS_PORT/${APK_BASE_NAME}-latest-version.json"
