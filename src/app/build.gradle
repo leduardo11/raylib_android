@@ -2,12 +2,12 @@ plugins {
     id 'com.android.application' version '8.2.0'
 }
 
-buildDir = layout.buildDirectory.dir('../../../artifacts').get().asFile
+
 
 android {
     namespace 'com.raylib.android'
     compileSdk 34
-    ndkVersion '27.0.12077973'
+    ndkVersion '26.1.10909125'
 
     defaultConfig {
         applicationId 'com.raylib.android'
