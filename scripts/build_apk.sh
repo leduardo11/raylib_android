@@ -52,12 +52,19 @@ fi
 # Build
 ./gradlew assemble"${BUILD_TYPE}" --warning-mode all 2>&1
 
-# Locate the APK
-APK=$(find "$ARTIFACTS_DIR" -name "raylib_android-${BUILD_TYPE,,}.apk" 2>/dev/null | head -1)
-
-if [ -z "$APK" ]; then
-    APK="$ANDROID_DIR/build/outputs/apk/${BUILD_TYPE,,}/app-${BUILD_TYPE,,}.apk"
-fi
+# Locate the APK: prefer the fresh Gradle output (default buildDir since
+# commit 199b6a1 removed the artifacts/ override), then scan artifacts/ for
+# any stale copies (old buildDir scheme) only as a last resort.
+APK=""
+for candidate in \
+    "$ANDROID_DIR/build/outputs/apk/${BUILD_TYPE,,}/raylib_android-${BUILD_TYPE,,}.apk" \
+    "$ANDROID_DIR/build/outputs/apk/${BUILD_TYPE,,}/app-${BUILD_TYPE,,}.apk" \
+    $(find "$ARTIFACTS_DIR" -name "raylib_android-${BUILD_TYPE,,}.apk" 2>/dev/null); do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+        APK="$candidate"
+        break
+    fi
+done
 
 if [ -n "$APK" ] && [ -f "$APK" ]; then
     # Sign the APK (debug builds are often unsigned on native-only APKs)

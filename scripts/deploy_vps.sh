@@ -56,13 +56,21 @@ if [ "$SKIP_BUILD" = "0" ]; then
     "$SCRIPT_DIR/build_apk.sh" "$BUILD_TYPE" 2>&1 | tail -8
 fi
 
-# Locate the APK the same way build_apk.sh does (original name).
-BUILT_APK=$(find "$PROJECT_DIR/artifacts" -name "raylib_android-${BUILD_TYPE,,}.apk" 2>/dev/null | head -1)
+# Locate the APK the same way build_apk.sh does: prefer the fresh Gradle
+# output (default buildDir since commit 199b6a1), then stale artifacts/
+# copies from the old buildDir scheme only as a last resort.
+BUILT_APK=""
+for candidate in \
+    "$PROJECT_DIR/src/app/build/outputs/apk/${BUILD_TYPE,,}/raylib_android-${BUILD_TYPE,,}.apk" \
+    "$PROJECT_DIR/src/app/build/outputs/apk/${BUILD_TYPE,,}/app-${BUILD_TYPE,,}.apk" \
+    $(find "$PROJECT_DIR/artifacts" -name "raylib_android-${BUILD_TYPE,,}.apk" 2>/dev/null); do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+        BUILT_APK="$candidate"
+        break
+    fi
+done
 if [ -z "$BUILT_APK" ]; then
-    BUILT_APK="$PROJECT_DIR/src/app/build/outputs/apk/${BUILD_TYPE,,}/app-${BUILD_TYPE,,}.apk"
-fi
-if [ ! -f "$BUILT_APK" ]; then
-    echo "Could not find built APK under $PROJECT_DIR/artifacts or $PROJECT_DIR/src/app/build/outputs" >&2
+    echo "Could not find built APK under $PROJECT_DIR/src/app/build/outputs or $PROJECT_DIR/artifacts" >&2
     exit 1
 fi
 
