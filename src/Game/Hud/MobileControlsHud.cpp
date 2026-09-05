@@ -106,7 +106,6 @@ Input::PlayerInputFrame MobileControlsHud::update(
     const HudLayout& L = HudLayout::get();
 
     // ── held-state snapshot (buttons vs gestures) ───────────────────────
-    const bool runDown  = anyTouchOver(touches, L.run);
     const bool runtimeDown = anyTouchOver(touches, L.super);
     const bool atkDown  = anyTouchOver(touches, L.attack);
     const bool hpDown   = anyTouchOver(touches, L.hpBtn);
@@ -292,7 +291,7 @@ Input::PlayerInputFrame MobileControlsHud::update(
         const float mag = sqrtf(dx * dx + dy * dy);
         m_joyRad = mag / JOY_RADIUS;
 
-        const bool runOn = runDown || m_runPersistent;
+        const bool runOn = m_runPersistent;
         if (m_joyRad >= HUD_JOYSTICK_DEAD_ZONE)
         {
             const float s = (mag > JOY_RADIUS) ? JOY_RADIUS / mag : 1.0f;
@@ -316,13 +315,6 @@ Input::PlayerInputFrame MobileControlsHud::update(
     }
 
     // ── momentary modifier edges ────────────────────────────────────────
-    if (runDown != m_runHeldPrev)
-    {
-        m_runHeld = runDown;
-        frame.push(Input::PlayerToggle{
-            Input::ToggleKind::Run, m_runHeld, 0 });
-    }
-    m_runHeldPrev = runDown;
     m_superHeld = runtimeDown;
 
     // ── attack button: immediate on press, then repeat at the gate ──────
@@ -462,7 +454,7 @@ Input::PlayerInputFrame MobileControlsHud::update(
     m_view.ringX = m_ringX;
     m_view.ringY = m_ringY;
     m_view.menuOpen = m_menuOpen;
-    m_view.runHeld = m_runHeld || m_runPersistent;
+    m_view.runHeld = m_runPersistent;
     m_view.superHeld = m_superHeld;
     m_view.stanceOn = m_stanceOn;
     m_view.attackEnabled = true;

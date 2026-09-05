@@ -1711,9 +1711,9 @@ void run()
     // ── RUN button tap: toggles run persistent mode ON/OFF ─────────────
     {
         // Tap RUN button -> toggle persistent run ON
-        Input::PlayerInputFrame fOn = hud.update(tap.press(1020.0f, 500.0f),
+        Input::PlayerInputFrame fOn = hud.update(tap.press(1124.0f, 34.0f),
                                                  KeyState{}, world, stt, 0.016f);
-        hud.update(tap.release(1020.0f, 500.0f), KeyState{}, world, stt, 0.016f);
+        hud.update(tap.release(1124.0f, 34.0f), KeyState{}, world, stt, 0.016f);
         const PlayerToggle* togg = hudFind<PlayerToggle>(fOn);
         CHECK(togg && togg->kind == ToggleKind::Run && togg->on);
         CHECK(hud.view().runHeld);
@@ -1727,9 +1727,9 @@ void run()
         hud.update(tap.release(400.0f, 300.0f), KeyState{}, world, stt, 0.016f);
 
         // Tap RUN button again -> toggle persistent run OFF
-        Input::PlayerInputFrame fOff = hud.update(tap.press(1020.0f, 500.0f),
+        Input::PlayerInputFrame fOff = hud.update(tap.press(1124.0f, 34.0f),
                                                   KeyState{}, world, stt, 0.016f);
-        hud.update(tap.release(1020.0f, 500.0f), KeyState{}, world, stt, 0.016f);
+        hud.update(tap.release(1124.0f, 34.0f), KeyState{}, world, stt, 0.016f);
         togg = hudFind<PlayerToggle>(fOff);
         CHECK(togg && togg->kind == ToggleKind::Run && !togg->on);
         CHECK(!hud.view().runHeld);

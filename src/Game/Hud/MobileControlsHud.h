@@ -58,7 +58,7 @@ inline bool contains(const Rect& r, float px, float py)
 // The approved layout, in logical coordinates (§3).
 struct HudLayout {
     Rect menu     { 1172.0f, 12.0f, 96.0f, 44.0f };
-    Rect run      { 980.0f, 480.0f, 96.0f, 52.0f };
+    Rect run      { 1084.0f, 12.0f, 80.0f, 44.0f };
     Rect super    { 1090.0f, 480.0f, 96.0f, 52.0f };
     Rect attack   { 1090.0f, 544.0f, 124.0f, 124.0f };
     Rect stance   { 1222.0f, 544.0f, 46.0f, 46.0f };
@@ -158,7 +158,6 @@ private:
     uint32_t m_ringId = 0;
 
     bool m_menuOpen = false;
-    bool m_runHeld = false, m_runHeldPrev = false;
     bool m_superHeld = false;
     bool m_stanceOn = false;
     bool m_runPersistent = false;
